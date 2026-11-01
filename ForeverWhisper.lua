@@ -47,7 +47,7 @@ NS.AlertSounds = {
     {"Raid warning", "RAID_WARNING", 8959}, {"Map ping", "MAP_PING", 3175},
     {"Friend alert", "UI_BNET_TOAST", 18019},
     {"Drum hit", "file", 566027}, {"Troll gong", "file", 565564},
-    {"Hunting horn", "file", 567084}, {"War horn", "file", 598196},
+    {"Hunting horn", "file", 567084}, {"Hunting horn", "file", 567084, true},
     {"Alarm clock", "ALARM_CLOCK_WARNING_1", 18871}, {"Alarm bell", "ALARM_CLOCK_WARNING_2", 12867},
     {"Urgent alarm", "ALARM_CLOCK_WARNING_3", 12889}, {"Boss warning", "RAID_BOSS_EMOTE_WARNING", 12197},
     {"Boss whisper", "UI_RAID_BOSS_WHISPER_WARNING", 37666},
@@ -92,7 +92,8 @@ function NS.SoundOptions()
     local function add(text,value)
         entries[#entries+1]={text=text,value=value,preview=function() NS.PlayAlertSound(value,true) end}
     end
-    for i,choice in ipairs(NS.AlertSounds) do add(NS.L[choice[1]],i) end
+    -- Keep retired indices reserved so saved selections do not shift.
+    for i,choice in ipairs(NS.AlertSounds) do if not choice[4] then add(NS.L[choice[1]],i) end end
     local media=NS.SharedMedia()
     if media then
         local names={}
@@ -332,8 +333,14 @@ local function button(parent, text, width, height, click)
     title:SetFont(fonts[db.font][2], 13, "")
     title:SetTextColor(0.91, 0.95, 1)
     title:SetPoint("CENTER")
-    b:SetFontString(title)
+    -- Keep the label independent of Button's native normal/pushed font states.
+    -- Native state changes can hide an attached custom FontString.
     b.fontText = title
+    function b:SetText(value)
+        self.text = tostring(value or "")
+        self.fontText:SetText(self.text)
+    end
+    function b:GetText() return self.fontText:GetText() end
     b:SetText(text)
     b:SetScript("OnClick", click)
     styledButtons[#styledButtons + 1] = b
@@ -371,8 +378,11 @@ function NS.MarkDropdown(control)
         control.dropdownArrow[i]=line
     end
     control.fontText:ClearAllPoints()
-    control.fontText:SetPoint("LEFT",8,0)
-    control.fontText:SetPoint("RIGHT",-28,0)
+    control.fixedFont = "Fonts\\ARIALN.TTF"
+    control.fontText:SetFont(control.fixedFont, control.fontSize or 13, "")
+    control.fontText:SetPoint("TOPLEFT",8,-2)
+    control.fontText:SetPoint("BOTTOMRIGHT",-28,2)
+    control.fontText:SetJustifyV("MIDDLE")
     control.fontText:SetJustifyH("LEFT")
     control.fontText:SetWordWrap(false)
     control:SetScript("OnMouseDown",function() end)
@@ -439,8 +449,11 @@ function NS.OpenDropdown(owner, entries, selected, choose)
                 if entry then local callback=menu.choose; menu:Hide();callback(entry.value) end
             end)
             row.fontText:ClearAllPoints()
-            row.fontText:SetPoint("LEFT", 8, 0)
-            row.fontText:SetPoint("RIGHT", -36, 0)
+            row.fixedFont = "Fonts\\ARIALN.TTF"
+            row.fontText:SetFont(row.fixedFont, 13, "")
+            row.fontText:SetPoint("TOPLEFT", 8, -2)
+            row.fontText:SetPoint("BOTTOMRIGHT", -36, 2)
+            row.fontText:SetJustifyV("MIDDLE")
             row.fontText:SetJustifyH("LEFT")
             row.fontText:SetWordWrap(false)
             row:SetScript("OnMouseDown", function() end)
@@ -681,7 +694,7 @@ local function applyFont()
         item.frame:SetFont(path, item.size, "")
     end
     for _, b in ipairs(styledButtons) do
-        b.fontText:SetFont(path, b.fontSize or 13, "")
+        b.fontText:SetFont(b.fixedFont or path, b.fontSize or 13, "")
     end
     if transcript then transcript:SetFont(fonts[db.font][2], db.fontSize, "") end
     if input then input:SetFont(fonts[db.font][2], db.fontSize + 1, "") end
@@ -3067,6 +3080,7 @@ FW:SetScript("OnEvent", function(_, event, ...)
         db.artBrightness = clamp(db.artBrightness, 0.25, 1)
         db.historyLimit = clamp(db.historyLimit, 20, 200)
         db.font = clamp(db.font, 1, #fonts)
+        if db.soundChoice == 9 then db.soundChoice = 8 end -- Retired war horn: use the hunting horn.
         db.theme = clamp(db.theme, 1, #themes)
         db.minimapAngle = clamp(db.minimapAngle, 0, 360)
         db.conversations = type(db.conversations) == "table" and db.conversations or {}

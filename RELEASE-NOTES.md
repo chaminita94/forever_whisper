@@ -1,4 +1,4 @@
-# Forever Whisper 0.15.2 - local test
+# Forever Whisper 0.15.2
 
 ## Links and keyboard focus
 
@@ -15,7 +15,7 @@
 
 ## Sounds
 
-- Expand to 18 native WoW sounds, including drum, troll gong, hunting/war horns, alarms, boss warnings, character greetings, and warning voices. The original five choices keep their saved indices.
+- Expand to 17 native WoW sounds, including drum, troll gong, a hunting horn, alarms, boss warnings, character greetings, and warning voices. The original five choices keep their saved indices.
 - Add a Listen button to preview the selected sound without enabling notifications.
 - Respect the main whisper-sound toggle, the SFX audio channel, and per-contact mute. No bundled audio files or required sound library.
 - Offer sounds already registered by other addons through LibSharedMedia when available. External selections are saved by name; missing assets fall back safely for notifications.
@@ -39,4 +39,8 @@
 - Add six static OFL font families: Questrial, Gentium Book Plus, Rajdhani, Asap Condensed, Almendra, and Carter One. There are now twelve font choices, with existing saved indices preserved.
 - Include each font license and source reference, and check Spanish accents and punctuation.
 
-Not yet published to CurseForge.
+## Dropdown visibility and Classic sound compatibility
+
+- Keep button labels independent of native pressed/hover font states. Give dropdown captions and rows explicit text bounds and a consistent readable menu font; the chosen font still applies to the conversation and preview.
+- Remove the unavailable war horn from the menu. Existing war-horn selections migrate to Hunting horn without shifting other saved sound choices.
+- Keep WoW sound volume unchanged; no global volume controls or temporary volume changes.

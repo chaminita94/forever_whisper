@@ -2,7 +2,7 @@
 
 A customizable messenger for World of Warcraft whispers, with persistent conversations, themed artwork, and combat-friendly behavior.
 
-**Current source: 0.15.2-local; published release: 0.15.1.** Supports Classic Era and Forever.
+**Current release: 0.15.2.** Supports Classic Era and Forever.
 
 ## Features
 
@@ -13,7 +13,7 @@ A customizable messenger for World of Warcraft whispers, with persistent convers
 
 - Minimal replaces Plum with a flat neutral theme and no decorative artwork, even when artwork is enabled for other themes. Sakura keeps its blossom artwork.
 - Automatic Spanish/English UI from your game locale, with a manual override in Settings > Sound / language. Use Reload UI there to apply your choice. Player messages and contact details are never translated.
-- 18 native alert sounds, with Listen previews and optional sounds from installed SharedMedia addons; per-contact mute still takes priority.
+- 17 native alert sounds, with Listen previews and optional sounds from installed SharedMedia addons; per-contact mute still takes priority.
 - Copying releases the keyboard after Ctrl+C, Escape, or Close. Clicking outside the addon releases its text fields while preserving drafts.
 
 - Incoming messages on the left and your replies on the right, with sender labels and timestamps.

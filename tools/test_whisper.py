@@ -52,7 +52,8 @@ function methods:SetHeight(v) self.height=v end
 function methods:GetWidth() return self.width>0 and self.width or (self.parent and self.parent:GetWidth() or 800) end
 function methods:GetHeight() return self.height>0 and self.height or (self.parent and self.parent:GetHeight() or 600) end
 function methods:SetFont(path,size) self.font=path;self.fontSize=size end
-function methods:SetFontString(f) self.fontText=f end
+function methods:SetFontString(f) self.fontText=f; self.nativeFontString=f end
+function methods:SetJustifyV(v) self.justifyV=v end
 function methods:SetText(text)
     self.text=tostring(text or "")
     if self.fontText then self.fontText.text=self.text end
@@ -957,6 +958,16 @@ local playedFiles={}
 function PlaySoundFile(file) playedFiles[#playedFiles+1]=file;return true,99 end
 general.soundChoice.scripts.OnClick()
 local soundMenu=ForeverWhisperDropdown
+-- Button state transitions must not own/hide dropdown labels.
+for _,control in ipairs({general.soundChoice,unpack(soundMenu.rows)}) do
+    assert(not control.nativeFontString,"Native button state still owns the menu label")
+    local caption=control.fontText:GetText()
+    for _,script in ipairs({"OnMouseDown","OnEnter","OnMouseUp","OnLeave"}) do
+        if control.scripts[script] then control.scripts[script](control,"LeftButton") end
+        assert(control.fontText:GetText()==caption and control.fontText:IsShown(),"Menu interaction hid its text")
+    end
+end
+for _,entry in ipairs(soundMenu.entries) do assert(entry.value~=9,"Unavailable war horn is still offered") end
 assert(soundMenu.search:IsShown() and not soundMenu.search.focus)
 soundMenu.search:SetText("gong")
 assert(soundMenu.rows[1].entry.value==7)
@@ -1062,6 +1073,7 @@ for game_locale, choice, spanish in (
         function GetLocale() return locale end
         function ReloadUI() requestedReload=true end
         ForeverWhisperDB.language = choice
+        ForeverWhisperDB.soundChoice = 9
         ForeverWhisperDB.conversations.keep = {name="EnglishName",nickname="Settings",note="Search",last=1,
             messages={{text="Send Online Settings",at=1,outgoing=false}}}
     ''', game_locale, choice)
@@ -1071,6 +1083,7 @@ for game_locale, choice, spanish in (
     vm.execute(r'''
         local spanish = ...
         event("ADDON_LOADED","ForeverWhisper")
+        assert(ForeverWhisperDB.soundChoice==8,"Retired sound selection did not migrate")
         SlashCmdList.FOREVERWHISPER("EnglishName")
         local win=ForeverWhisperWindow
         assert(win.sendButton.text==(spanish and "Enviar" or "Send"))
