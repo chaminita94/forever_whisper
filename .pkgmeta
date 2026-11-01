@@ -5,3 +5,6 @@ ignore:
   - tools
   - requirements-dev.txt
   - RELEASING.md
+manual-changelog:
+  filename: RELEASE-NOTES.md
+  markup-type: markdown

@@ -2,7 +2,7 @@
 
 A customizable messenger for World of Warcraft whispers, with persistent conversations, themed artwork, and combat-friendly behavior.
 
-**Current source: 0.15.0 development build.** The recent Classic Era and Battle.net changes need further in-game testing before a stable release.
+**Current source: 0.15.0-beta1.** The recent Classic Era and Battle.net changes need further in-game testing before a stable release.
 
 ## Features
 
