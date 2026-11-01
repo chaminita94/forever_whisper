@@ -334,11 +334,11 @@ local function conversation(name, bnetID)
     if not key then return nil end
     local c = db.conversations[key]
     if not c then
-        c = { name = record and record.info.battleTag or NS.DisplayName(name), last = time(), unread = 0, messages = {} }
+        c = { name = record and NS.BNetDisplayName(record.info.battleTag) or NS.DisplayName(name), last = time(), unread = 0, messages = {} }
         db.conversations[key] = c
         trimContacts(key)
     else
-        c.name = record and record.info.battleTag or NS.DisplayName(name)
+        c.name = record and NS.BNetDisplayName(record.info.battleTag) or NS.DisplayName(name)
     end
     if record then c.kind, c.battleTag = "bnet", record.info.battleTag end
     return key, c
@@ -589,7 +589,8 @@ local function refreshTranscript(preserveScroll, newMessage)
         local heading = group and (color .. linkedSpeaker .. "|r" .. stamp .. "\n") or ""
         local dateLine = newDay and ("|cff778899" .. day .. "|r\n") or ""
         local body, who, quote = NS.DecodeReply(item.text)
-        local quoted = who and ("|cff7fcbbb> " .. NS.Excerpt(who, 40) .. ": " .. NS.Excerpt(quote) .. "|r\n") or ""
+        if who and c.kind == "bnet" then who = NS.BNetDisplayName(who) end
+        local quoted = who and ("|cff7fcbbbReply to " .. NS.Excerpt(who, 40) .. "|r\n|cff98aaa9" .. NS.Excerpt(quote) .. "|r\n") or ""
         transcript:AddMessage(dateLine .. heading .. quoted .. prefix .. "|cffd6e1eb  " .. renderEmoji(renderMapPins(body)) .. "|r", item.outgoing)
         previous = item
     end
@@ -630,6 +631,9 @@ local function refreshContacts()
             if item.data.kind == "bnet" then b.detail:SetText("Battle.net  ·  " .. b.detail:GetText()) end
             local last = item.data.messages[#item.data.messages]
             local preview = last and ((last.outgoing and "You: " or "") .. last.text) or "Start the conversation"
+            if item.data.kind == "bnet" and last then
+                preview = (last.outgoing and "You: " or "") .. NS.BNetDisplayMessage(last.text)
+            end
             preview = preview:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
                 :gsub("|H.-|h(.-)|h", "%1"):gsub("|T.-|t", "[image]"):gsub("[\r\n]", " ")
             b.preview:SetText((item.data.pinned and "|cff9ab5cbPIN  |r" or "") .. preview)
@@ -841,7 +845,7 @@ local function performSearch()
             if string.find(string.lower(item.text), query, 1, true) then
                 messageCount = messageCount + 1
                 local result = { kind = "message", key = key, name = c.name, index = i,
-                    text = item.text, at = item.at }
+                    text = c.kind == "bnet" and NS.BNetDisplayMessage(item.text) or item.text, at = item.at }
                 if #messageMatches < 60 then
                     messageMatches[#messageMatches + 1] = result
                 else
@@ -924,7 +928,7 @@ local function copyHistory(key)
     local lines, size = {}, 0
     for _, item in ipairs(c.messages) do
         local line = date("%Y-%m-%d %H:%M", item.at) .. "  " ..
-            (item.outgoing and "You" or c.name) .. ": " .. item.text
+            (item.outgoing and "You" or c.name) .. ": " .. (c.kind == "bnet" and NS.BNetDisplayMessage(item.text) or item.text)
         -- Chat color/texture codes are not useful in a copied transcript.
         line = line:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
         line = line:gsub("{rt([1-8])}", "[marker %1]")
@@ -1089,7 +1093,7 @@ openContactMenu = function(key, owner)
     end
     end -- Character-only friend/ignore/report actions must never target a BattleTag.
     add(c.pinned and "Unpin conversation" or "Pin conversation", function() togglePin(key) end)
-    add(c.kind == "bnet" and "Copy BattleTag" or "Copy character name", function()
+    add(c.kind == "bnet" and "Copy name" or "Copy character name", function()
         copyHistory(key)
         copyBox:SetText(c.name)
         copyBox:HighlightText()
@@ -2413,7 +2417,8 @@ FW:SetScript("OnEvent", function(_, event, ...)
             if not outgoing then
                 queuedInCombat = true
                 if db.combatPreview and combatPreview then
-                    combatPreview:ShowWhisper(author, renderEmoji(renderMapPins(message)))
+                    combatPreview:ShowWhisper(db.conversations[key].name,
+                        renderEmoji(renderMapPins(bnet and NS.BNetDisplayMessage(message) or message)))
                 end
             end
         else

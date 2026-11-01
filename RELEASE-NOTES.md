@@ -1,4 +1,13 @@
-# Forever Whisper 0.15.0-beta1
+# Forever Whisper 0.15.0-beta2
+
+## Privacy and usability fixes
+
+- Hide BattleTag discriminators such as #1234 from contact labels, headings, sender labels, and combat notifications.
+- Hide discriminators in old quoted-message labels, search previews, and copied conversations. Full BattleTags remain internal for reliable routing.
+- Replace loose reply arrows with compact labeled Reply buttons and larger click targets.
+- Separate quoted sender names and excerpts from the new message.
+
+## Messenger update included in this beta
 
 This beta brings the messenger update to Classic Era and adds Battle.net conversations.
 

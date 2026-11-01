@@ -19,6 +19,6 @@ This uses BigWigsMods/packager. Leave CurseForge's separate automatic packaging 
 4. Create and push a matching annotated tag, for example `git tag -a v0.15.1-beta1 -m "0.15.1 beta 1"` and `git push origin v0.15.1-beta1`.
 5. Check the Release addon workflow and the uploaded file's game versions and release type on CurseForge. Moderation may still be required.
 
-The tag must match both TOC versions. Release configuration is checked before any upload. The first release tag is v0.15.0-beta1.
+The tag must match both TOC versions. Release configuration is checked before any upload. Release tags begin at v0.15.0-beta1. This first upload attempt stopped during configuration validation.
 
 Documentation: https://github.com/BigWigsMods/packager

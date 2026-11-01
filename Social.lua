@@ -31,7 +31,8 @@ function NS.CanonicalConversations(saved)
                 if not target then
                     target = {}
                     for field, value in pairs(c) do target[field] = value end
-                    target.name, target.messages, target.unread, target.last = c.kind == "bnet" and name or NS.DisplayName(name), {}, 0, 0
+                    target.name, target.messages, target.unread, target.last = c.kind == "bnet" and NS.BNetDisplayName(name) or NS.DisplayName(name), {}, 0, 0
+                    if c.kind == "bnet" then target.battleTag = c.battleTag or name end
                     merged[key] = target
                 end
                 for field, value in pairs(c) do
@@ -39,7 +40,7 @@ function NS.CanonicalConversations(saved)
                 end
                 if (tonumber(c.last) or 0) >= target.last then
                     target.last = tonumber(c.last) or 0
-                    target.name = c.kind == "bnet" and name or NS.DisplayName(name)
+                    target.name = c.kind == "bnet" and NS.BNetDisplayName(name) or NS.DisplayName(name)
                     target.guid, target.lineID = c.guid or target.guid, c.lineID or target.lineID
                 end
                 target.pinned = target.pinned or c.pinned

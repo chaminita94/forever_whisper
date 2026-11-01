@@ -1,6 +1,17 @@
 local _, NS = ...
 local roster, loaded, disconnected = {}, false, false
 
+-- Keep the discriminator in identity keys, never in visible contact labels.
+function NS.BNetDisplayName(tag)
+    return type(tag) == "string" and (tag:match("^(.-)#%d+$") or tag) or "Battle.net friend"
+end
+
+function NS.BNetDisplayMessage(text)
+    local body, who, quote = NS.DecodeReply(text)
+    if who then return "[Reply to " .. NS.BNetDisplayName(who) .. ": " .. quote .. "] " .. body end
+    return text
+end
+
 function NS.BNetKey(tag)
     if type(tag) ~= "string" or not tag:match("^.+#%d+$") then return nil end
     return "bnet:" .. tag:lower()
