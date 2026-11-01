@@ -4,10 +4,10 @@ Normal pushes run checks without publishing to CurseForge. Pushing a tag startin
 
 ## One-time setup
 
-In GitHub Settings > Secrets and variables > Actions:
+In GitHub Settings > Environments > ForeverGithub:
 
 The CurseForge project ID **1756454** is already set in both TOC files.
-- Add a repository secret named `CF_API_TOKEN` with an upload token from your CurseForge author account. Never commit the token.
+- Add an environment secret named `FWHISPER` with an upload token from your CurseForge author account. The release job selects the ForeverGithub environment and maps this secret to the packager's `CF_API_TOKEN` variable. Never commit the token.
 
 This uses BigWigsMods/packager. Leave CurseForge's separate automatic packaging integration disabled to avoid duplicate uploads.
 

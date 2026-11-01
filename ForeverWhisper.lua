@@ -1464,6 +1464,9 @@ local function makeWindow()
         searchJump = nil
         window.latest:Hide()
     end)
+    -- Transcript rows have mouse-enabled children above their scroll frame.
+    -- Keep the floating button above those children across the whole surface.
+    window.latest:SetFrameLevel(transcript:GetFrameLevel() + 8)
     window.latest:SetPoint("BOTTOMRIGHT", -25, 76)
     window.latest:Hide()
     local compose = CreateFrame("Frame", nil, conversationView)

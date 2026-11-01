@@ -250,8 +250,15 @@ local bubbleCount=#objects
 for i=1,10 do log:Restyle() end
 assert(#objects==bubbleCount,"Reflow allocated more message rows")
 assert(log.rows[#log.lines].width<=log:GetWidth()*0.80)
+for _, row in ipairs(log.rows) do
+    assert(ForeverWhisperWindow.latest:GetFrameLevel()>row.body:GetFrameLevel(),
+        "Message text intercepts Latest messages clicks")
+    assert(ForeverWhisperWindow.latest:GetFrameLevel()>row.reply:GetFrameLevel(),
+        "Reply controls intercept Latest messages clicks")
+end
 click("Latest messages")
 assert(log.offset==0)
+assert(not ForeverWhisperWindow.latest:IsShown())
 click("More ...")
 click("Ignore player...")
 assert(popup.which=="FOREVERWHISPER_IGNORE" and popup.data=="Alice")

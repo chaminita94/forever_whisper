@@ -2,6 +2,7 @@
 
 ## Privacy and usability fixes
 
+- Fix message rows intercepting clicks in the middle of the Latest messages button.
 - Hide BattleTag discriminators such as #1234 from contact labels, headings, sender labels, and combat notifications.
 - Hide discriminators in old quoted-message labels, search previews, and copied conversations. Full BattleTags remain internal for reliable routing.
 - Replace loose reply arrows with compact labeled Reply buttons and larger click targets.
