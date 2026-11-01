@@ -1,0 +1,39 @@
+name: Release addon
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements-dev.txt
+      - run: python tools/test_whisper.py
+      - name: Validate release configuration
+        env:
+          CF_PROJECT_ID: ${{ vars.CURSEFORGE_PROJECT_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          [[ "$CF_PROJECT_ID" =~ ^[0-9]+$ ]] || { echo 'Set the CURSEFORGE_PROJECT_ID repository variable.'; exit 1; }
+          [[ -n "$CF_API_TOKEN" ]] || { echo 'Set the CF_API_TOKEN repository secret.'; exit 1; }
+          version="${GITHUB_REF_NAME#v}"
+          for toc in ForeverWhisper*.toc; do
+            grep -Fxq "## Version: $version" "$toc" || { echo "Version mismatch in $toc"; exit 1; }
+          done
+      - name: Package and upload to CurseForge
+        uses: BigWigsMods/packager@v2
+        with:
+          args: -p ${{ vars.CURSEFORGE_PROJECT_ID }}
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ForeverWhisper-release
+          path: .release/*.zip

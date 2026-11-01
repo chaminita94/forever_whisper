@@ -1,0 +1,7 @@
+package-as: ForeverWhisper
+ignore:
+  - .github
+  - .gitignore
+  - tools
+  - requirements-dev.txt
+  - RELEASING.md

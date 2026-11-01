@@ -1,0 +1,2462 @@
+local ADDON, NS = ...
+local FW = CreateFrame("Frame")
+local db, window, settings, transcript, input, palette, copyWindow, copyBox
+local current, contactOffset = nil, 0
+local wasOpenAtCombat, queuedInCombat = false, false
+local contactButtons, styledButtons, styledLabels = {}, {}, {}
+local sidebar, conversationView
+local minimapButton
+local guildPresence, guildPresenceDirty = {}, true
+local searchView, searchInput, searchStatus, searchButtons = nil, nil, nil, {}
+local searchResults, searchOffset, searchJump = {}, 0, nil
+local activeView = "chat"
+local showView
+local CONTENT_LEFT = 232
+local drafts, contactQuery = {}, ""
+local actionMenu, newChat, refreshPalette
+local contactMenu, customEditor, openContactMenu
+local mapPinMarker
+local combatPreview
+local social
+local replyDrafts = {}
+local updateReplyPreview
+
+local defaults = {
+    width = 820, height = 560, fontSize = 14, scale = 1,
+    opacity = 0.94, historyLimit = 80, x = 0, y = 0,
+    font = 5, theme = 9, timestamps = true, sound = false,
+    keepChat = false, showMinimap = true, minimapAngle = 225,
+    conversations = {}, artwork = true, artBrightness = 0.95, combatPreview = true, typing = true,
+}
+
+local fonts = {
+    { "Classic", "Fonts\\FRIZQT__.TTF" },
+    { "Arial", "Fonts\\ARIALN.TTF" },
+    { "Morpheus", "Fonts\\MORPHEUS.TTF" },
+    { "Skurri", "Fonts\\SKURRI.TTF" },
+    { "Atkinson", "Interface\\AddOns\\ForeverWhisper\\Fonts\\AtkinsonHyperlegible-Regular.ttf" },
+    { "Instrument Serif", "Interface\\AddOns\\ForeverWhisper\\Fonts\\InstrumentSerif-Regular.ttf" },
+}
+local themes = {
+    { "Slate", 0.055, 0.075, 0.105, 0.65, 0.78, 0.95 },
+    { "Arthas", 0.035, 0.075, 0.135, 0.48, 0.77, 1.00 },
+    { "Plum", 0.105, 0.070, 0.13, 0.88, 0.62, 0.92 },
+    { "Wildwood", 0.055, 0.095, 0.085, 0.40, 0.84, 0.68 },
+    { "Doom", 0.13, 0.035, 0.040, 0.98, 0.32, 0.28 },
+    { "Graphite", 0.075, 0.083, 0.095, 0.74, 0.79, 0.89 },
+    { "Moonstone", 0.075, 0.085, 0.115, 0.55, 0.78, 0.98 },
+    { "Starlight", 0.085, 0.070, 0.115, 0.78, 0.68, 0.99 },
+    { "Sakura", 0.13, 0.075, 0.15, 0.91, 0.68, 0.82 },
+}
+local themeArtwork = {
+    { "IronCorner", false, 0.50 },       -- Slate
+    { "FrostCorner", false, 0.60 },      -- Arthas
+    { "SakuraCorner", true, 0.48 },      -- Plum
+    { "ForestCorner", true, 0.58 },      -- Wildwood
+    { "DoomCorner", false, 0.65 },       -- Doom
+    { "IronCorner", true, 0.55 },        -- Graphite
+    { "CelestialCorner", true, 0.56 },   -- Moonstone
+    { "CelestialCorner", true, 0.56 },   -- Starlight
+    { "SakuraCorner", true, 0.48 },      -- Sakura
+}
+
+local function styleBrand()
+    if not window or not window.brand then return end
+    local font, size = fonts[db.font][2], 19
+    if db.theme == 5 then font, size = fonts[4][2], 21
+    elseif db.theme == 2 then font, size = fonts[1][2], 20
+    elseif db.theme == 9 or db.theme == 4 then font, size = fonts[6][2], 24 end
+    window.brand:SetFont(font, size, "")
+end
+
+local function currentStyle()
+    return fonts[db.font][2], db.fontSize, themes[db.theme], db.opacity
+end
+
+local function replyPayload(text)
+    local reply = current and replyDrafts[current]
+    if reply then return "[Reply to " .. reply.who .. ": " .. reply.quote .. "] " .. text end
+    return text
+end
+
+-- BEGIN BUNDLED EMOJI
+local emoji = {
+    { "grin", "1f600", "Grin", "Faces" },
+    { "laugh", "1f602", "Laugh tears lol", "Faces" },
+    { "rofl", "1f923", "Rolling laughing lmao", "Faces" },
+    { "smile", "1f604", "Smile happy", "Faces" },
+    { "wink", "1f609", "Wink", "Faces" },
+    { "love", "1f60d", "Heart eyes love", "Faces" },
+    { "kiss", "1f618", "Kiss", "Faces" },
+    { "wow", "1f62e", "Surprised wow", "Faces" },
+    { "sad", "1f622", "Sad crying", "Faces" },
+    { "sob", "1f62d", "Sobbing crying", "Faces" },
+    { "angry", "1f621", "Angry rage", "Faces" },
+    { "think", "1f914", "Thinking hmm", "Faces" },
+    { "cool", "1f60e", "Cool sunglasses", "Faces" },
+    { "sweat", "1f605", "Nervous sweat", "Faces" },
+    { "sleep", "1f634", "Sleeping tired", "Faces" },
+    { "nerd", "1f913", "Nerd glasses", "Faces" },
+    { "partyface", "1f973", "Party celebration", "Faces" },
+    { "smirk", "1f60f", "Smirk", "Faces" },
+    { "eyeroll", "1f644", "Eye roll whatever", "Faces" },
+    { "zip", "1f910", "Zipped lips secret", "Faces" },
+    { "sick", "1f922", "Sick nauseous", "Faces" },
+    { "woozy", "1f974", "Woozy drunk", "Faces" },
+    { "plead", "1f97a", "Pleading please", "Faces" },
+    { "salute", "1fae1", "Salute respect", "Faces" },
+    { "melt", "1fae0", "Melting", "Faces" },
+    { "peek", "1fae3", "Peeking shy", "Faces" },
+    { "teary", "1f972", "Happy tear", "Faces" },
+    { "angel", "1f607", "Angel innocent", "Faces" },
+    { "devil", "1f608", "Devil mischievous", "Faces" },
+    { "dead", "1f635", "Dizzy knocked out", "Faces" },
+    { "yes", "1f44d", "Thumbs up yes", "Hands" },
+    { "no", "1f44e", "Thumbs down no", "Hands" },
+    { "thanks", "1f64f", "Thanks pray", "Hands" },
+    { "clap", "1f44f", "Clap applause", "Hands" },
+    { "wave", "1f44b", "Wave hello goodbye", "Hands" },
+    { "ok", "1f44c", "OK perfect", "Hands" },
+    { "peace", "270c", "Peace victory", "Hands" },
+    { "fist", "1f44a", "Fist bump", "Hands" },
+    { "strong", "1f4aa", "Strong muscle", "Hands" },
+    { "raised", "1f64c", "Raised hands celebration", "Hands" },
+    { "point", "1f449", "Point right", "Hands" },
+    { "crossed", "1f91e", "Fingers crossed luck", "Hands" },
+    { "handshake", "1f91d", "Handshake deal", "Hands" },
+    { "rock", "1f918", "Rock on", "Hands" },
+    { "heart_hands", "1faf6", "Heart hands", "Hands" },
+    { "heart", "2764", "Red heart", "Hearts" },
+    { "blueheart", "1f499", "Blue heart", "Hearts" },
+    { "purpleheart", "1f49c", "Purple heart", "Hearts" },
+    { "greenheart", "1f49a", "Green heart", "Hearts" },
+    { "blackheart", "1f5a4", "Black heart", "Hearts" },
+    { "brokenheart", "1f494", "Broken heart", "Hearts" },
+    { "sparkleheart", "1f496", "Sparkling heart", "Hearts" },
+    { "twohearts", "1f495", "Two hearts", "Hearts" },
+    { "kissmark", "1f48b", "Kiss lips", "Hearts" },
+    { "rose", "1f339", "Rose flower", "Hearts" },
+    { "sparkles", "2728", "Sparkles magic", "Hearts" },
+    { "star", "2b50", "Star", "Hearts" },
+    { "fire", "1f525", "Fire hot", "Game" },
+    { "hundred", "1f4af", "100 perfect", "Game" },
+    { "party", "1f389", "Party popper", "Game" },
+    { "gg", "1f3c6", "GG trophy winner", "Game" },
+    { "medal", "1f947", "Gold medal first", "Game" },
+    { "gaming", "1f3ae", "Gaming controller", "Game" },
+    { "dice", "1f3b2", "Dice roll rng", "Game" },
+    { "target", "1f3af", "Target aim bullseye", "Game" },
+    { "swords", "2694", "Crossed swords combat", "Game" },
+    { "shield", "1f6e1", "Shield tank", "Game" },
+    { "bow", "1f3f9", "Bow hunter", "Game" },
+    { "magic", "1fa84", "Magic wand", "Game" },
+    { "gem", "1f48e", "Gem diamond loot", "Game" },
+    { "gold", "1fa99", "Gold coin money", "Game" },
+    { "potion", "1f9ea", "Potion vial", "Game" },
+    { "heal", "1fa79", "Heal bandage", "Game" },
+    { "lightning", "26a1", "Lightning fast", "Game" },
+    { "rocket", "1f680", "Rocket go", "Game" },
+    { "hourglass", "23f3", "Wait hourglass", "Game" },
+    { "crown", "1f451", "Crown king queen", "Game" },
+    { "check", "2705", "Check ready", "Game" },
+    { "cross", "274c", "Cross no cancel", "Game" },
+    { "skull", "1f480", "Skull dead dying rip", "Memes" },
+    { "clown", "1f921", "Clown", "Memes" },
+    { "eyes", "1f440", "Eyes watching sus", "Memes" },
+    { "moai", "1f5ff", "Moai bruh stone face", "Memes" },
+    { "brain", "1f9e0", "Big brain galaxy smart", "Memes" },
+    { "mindblown", "1f92f", "Mind blown", "Memes" },
+    { "poop", "1f4a9", "Poop", "Memes" },
+    { "ghost", "1f47b", "Ghost boo", "Memes" },
+    { "alien", "1f47d", "Alien", "Memes" },
+    { "robot", "1f916", "Robot bot", "Memes" },
+    { "popcorn", "1f37f", "Popcorn drama", "Memes" },
+    { "tea", "1f375", "Tea gossip", "Memes" },
+    { "coffee", "2615", "Coffee", "Memes" },
+    { "shrug", "1f937", "Shrug idk", "Memes" },
+    { "facepalm", "1f926", "Facepalm fail", "Memes" },
+    { "shrimp", "1f990", "Shrimp", "Memes" },
+    { "goat", "1f410", "GOAT greatest", "Memes" },
+    { "rat", "1f400", "Rat", "Memes" },
+    { "snake", "1f40d", "Snake", "Memes" },
+    { "monkey", "1f648", "See no evil monkey", "Memes" },
+    { "catcry", "1f63f", "Crying cat", "Memes" },
+    { "catsmirk", "1f63c", "Smirking cat", "Memes" },
+    { "catlaugh", "1f639", "Laughing cat", "Memes" },
+    { "unamused", "1f612", "Unamused really nope", "Memes" },
+}
+-- END BUNDLED EMOJI
+local emojiPaths, emojiByCode = {}, {}
+for _, entry in ipairs(emoji) do
+    emojiPaths[entry[1]] = "Interface\\AddOns\\ForeverWhisper\\Emoji\\" .. entry[2] .. ".png"
+    emojiByCode[entry[1]] = entry
+end
+local aliases = { lol = "laugh", lmao = "rofl", bruh = "moai", rip = "skull",
+    sus = "eyes", rage = "angry", nope = "unamused", goat = "goat",
+    thumbsup = "yes", thumbsdown = "no", ["+1"] = "yes", ["-1"] = "no" }
+for code, target in pairs(aliases) do emojiPaths[code] = emojiPaths[target] end
+
+local function clamp(n, low, high)
+    n = tonumber(n) or low
+    return math.max(low, math.min(high, n))
+end
+
+local function inCombat()
+    return InCombatLockdown and InCombatLockdown()
+end
+
+local function normalize(name)
+    if type(name) ~= "string" then return nil end
+    name = name:match("^%s*(.-)%s*$")
+    if name == "" then return nil end
+    return NS.PeerKey(name)
+end
+
+-- Simple native surfaces; the old shape system has been removed.
+local function surface(parent, layer)
+    return parent:CreateTexture(nil, layer or "BACKGROUND")
+end
+
+local function fill(parent, r, g, b, a, _, layer)
+    local t = surface(parent, layer)
+    t:SetAllPoints()
+    t:SetColorTexture(r, g, b, a or 1)
+    return t
+end
+
+local function label(parent, text, size, anchor, x, y)
+    local f = parent:CreateFontString(nil, "OVERLAY")
+    f:SetFont(fonts[db.font][2], size)
+    f:SetPoint(anchor or "LEFT", parent, anchor or "LEFT", x or 0, y or 0)
+    f:SetText(text)
+    f:SetJustifyH("LEFT")
+    styledLabels[#styledLabels + 1] = { frame = f, size = size }
+    return f
+end
+
+local function button(parent, text, width, height, click)
+    local b = CreateFrame("Button", nil, parent)
+    b:SetSize(width, height)
+    b.bg = fill(b, 0.17, 0.22, 0.29, 1, true)
+    b.hover = surface(b, "ARTWORK")
+    b.hover:SetAllPoints()
+    b.hover:SetColorTexture(1, 1, 1, 0.09)
+    b.hover:Hide()
+    b:SetScript("OnEnter", function(self) self.hover:Show() end)
+    b:SetScript("OnLeave", function(self) self.hover:Hide() end)
+    b:SetScript("OnMouseDown", function(self) self.fontText:SetPoint("CENTER", 0, -1) end)
+    b:SetScript("OnMouseUp", function(self) self.fontText:SetPoint("CENTER", 0, 0) end)
+    local title = b:CreateFontString(nil, "OVERLAY")
+    title:SetFont(fonts[db.font][2], 13, "")
+    title:SetTextColor(0.91, 0.95, 1)
+    title:SetPoint("CENTER")
+    b:SetFontString(title)
+    b.fontText = title
+    b:SetText(text)
+    b:SetScript("OnClick", click)
+    styledButtons[#styledButtons + 1] = b
+    return b
+end
+
+
+local function validPin(mapID, x, y)
+    return type(mapID) == "number" and mapID > 0 and mapID <= 100000
+        and mapID == math.floor(mapID) and type(x) == "number" and type(y) == "number"
+        and x >= 0 and x <= 1 and y >= 0 and y <= 1
+end
+
+local function renderMapPins(text)
+    return (text:gsub("%[Pin: ([^%]\r\n]+)%]%s*{fwmap:(%d+):(%d+):(%d+)}", function(title, map, px, py)
+        local id, x, y = tonumber(map), tonumber(px) / 10000, tonumber(py) / 10000
+        if not validPin(id, x, y) then return "[Invalid map pin]" end
+        title = title:gsub("|", "")
+        return "|cffffb7d6|Hfwmap:" .. map .. ":" .. px .. ":" .. py .. "|h[Pin: " .. title .. "]|h|r"
+    end))
+end
+
+local function renderEmoji(text)
+    local size = db.fontSize + 7
+    return (text:gsub(":([%w_+-]+):", function(code)
+        local path = emojiPaths[string.lower(code)]
+        if path then return "|T" .. path .. ":" .. size .. ":" .. size .. "|t" end
+        return ":" .. code .. ":"
+    end))
+end
+
+local function names()
+    local result = {}
+    for key, conversation in pairs(db.conversations) do
+        result[#result + 1] = { key = key, data = conversation }
+    end
+    table.sort(result, function(a, b)
+        if not not a.data.pinned ~= not not b.data.pinned then
+            return not not a.data.pinned
+        end
+        if a.data.last == b.data.last then return a.key < b.key end
+        return a.data.last > b.data.last
+    end)
+    return result
+end
+
+local function refreshMinimap()
+    if not minimapButton or not db then return end
+    minimapButton:SetShown(db.showMinimap)
+    local unread = 0
+    for _, c in pairs(db.conversations) do
+        unread = unread + (tonumber(c.unread) or 0)
+    end
+    minimapButton.badge:SetShown(unread > 0)
+    minimapButton.badgeText:SetShown(unread > 0)
+    minimapButton.badgeText:SetText(unread > 9 and "9+" or tostring(unread))
+end
+
+local function trimContacts(keep)
+    local sorted = names()
+    local count = #sorted
+    for i = #sorted, 1, -1 do
+        if count <= 40 then break end
+        if sorted[i].key ~= current and sorted[i].key ~= keep
+            and not sorted[i].data.pinned then
+            db.conversations[sorted[i].key] = nil
+            count = count - 1
+        end
+    end
+end
+
+local function conversation(name, bnetID)
+    local record = bnetID and NS.ResolveBNetID(bnetID)
+    if not bnetID and type(name) == "string" and name:match("#%d+$") then
+        record = NS.FindBNet(name)
+        if not record then return nil end
+    end
+    if bnetID and not record then return nil end
+    local key = record and record.key or normalize(name)
+    if not key then return nil end
+    local c = db.conversations[key]
+    if not c then
+        c = { name = record and record.info.battleTag or NS.DisplayName(name), last = time(), unread = 0, messages = {} }
+        db.conversations[key] = c
+        trimContacts(key)
+    else
+        c.name = record and record.info.battleTag or NS.DisplayName(name)
+    end
+    if record then c.kind, c.battleTag = "bnet", record.info.battleTag end
+    return key, c
+end
+
+local function addMessage(name, message, outgoing, lineID, guid, bnetID)
+    local key, c = conversation(name, bnetID)
+    if not c then return end
+    c.last = time()
+    if not outgoing then
+        if type(guid) == "string" and guid:match("^Player%-") then c.guid = guid end
+        if type(lineID) == "number" then c.lineID = lineID end
+    end
+    c.messages[#c.messages + 1] = { text = message, outgoing = outgoing, at = c.last }
+    while #c.messages > db.historyLimit do
+        table.remove(c.messages, 1)
+    end
+    if not outgoing and (key ~= current or not window or not window:IsShown() or activeView ~= "chat") then
+        c.unread = (c.unread or 0) + 1
+    end
+    refreshMinimap()
+    return key, c
+end
+
+local function rebuildGuildPresence()
+    local roster = {}
+    if IsInGuild and IsInGuild() and GetNumGuildMembers and GetGuildRosterInfo then
+        local realm = GetRealmName and GetRealmName()
+        realm = realm and string.lower(realm:gsub("%s", ""))
+        for i = 1, GetNumGuildMembers() do
+            local name, _, _, _, _, _, _, _, online = GetGuildRosterInfo(i)
+            if type(name) == "string" and type(online) == "boolean" then
+                roster[normalize(name)] = online
+                local short, memberRealm = name:match("^([^%-]+)%-(.+)$")
+                if not memberRealm then
+                    roster[normalize(name)] = online
+                elseif realm and string.lower(memberRealm:gsub("%s", "")) == realm then
+                    roster[normalize(short)] = online
+                end
+            end
+        end
+    end
+    guildPresence = roster
+    guildPresenceDirty = false
+end
+
+local function contactPresence(name, c)
+    if c and c.kind == "bnet" then return NS.BNetPresence(c) end
+    if guildPresenceDirty then rebuildGuildPresence() end
+    local status, area = NS.FriendPresence(name)
+    if status ~= nil then return status, "friend", area end
+    local known = guildPresence[normalize(name)]
+    if known ~= nil then return known, "guild" end
+end
+
+local function refreshPresence()
+    if not window or not window.presence then return end
+    if guildPresenceDirty then rebuildGuildPresence() end
+    local c = current and db.conversations[current]
+    if not c then
+        window.presence:SetText("Select a conversation")
+        window.presence:SetTextColor(0.58, 0.70, 0.79)
+        return
+    end
+    local status, source, area = contactPresence(c.name, c)
+    if window.inviteButton then window.inviteButton:SetEnabled(c.kind ~= "bnet" or NS.CanInviteBNet(c)) end
+    if window.ignoreButton then
+        window.ignoreButton:SetEnabled(c.kind ~= "bnet")
+        window.ignoreButton:SetText(c.kind == "bnet" and "Character ignore only" or "Ignore player...")
+    end
+    if social and social:IsTyping(c.name) then
+        window.presence:SetText("Typing...")
+        window.presence:SetTextColor(0.42, 0.90, 0.80)
+    elseif status == true then
+        window.presence:SetText("Online (" .. source .. ")")
+        if area and area ~= "" then window.presence:SetText((c.kind == "bnet" and "Battle.net  ·  " or "Online  ·  ") .. area) end
+        window.presence:SetTextColor(0.42, 0.90, 0.64)
+    elseif status == false then
+        window.presence:SetText("Offline (" .. source .. ")")
+        window.presence:SetTextColor(0.66, 0.72, 0.78)
+    else
+        window.presence:SetText(c.kind == "bnet" and "Battle.net status unavailable" or "Status: friends and guild only")
+        window.presence:SetTextColor(0.63, 0.73, 0.80)
+    end
+end
+
+local function applyFont()
+    local path = fonts[db.font][2]
+    for _, item in ipairs(styledLabels) do
+        item.frame:SetFont(path, item.size, "")
+    end
+    for _, b in ipairs(styledButtons) do
+        b.fontText:SetFont(path, b.fontSize or 13, "")
+    end
+    if transcript then transcript:SetFont(fonts[db.font][2], db.fontSize, "") end
+    if input then input:SetFont(fonts[db.font][2], db.fontSize + 1, "") end
+    if input and input.hint then input.hint:SetFont(fonts[db.font][2], db.fontSize + 1, "") end
+    if window and window.heading then window.heading:SetFont(fonts[db.font][2], db.fontSize + 3) end
+    for _, b in ipairs(contactButtons) do
+        b.name:SetFont(fonts[db.font][2], math.min(db.fontSize, 15), "")
+        b.preview:SetFont(fonts[db.font][2], 11, "")
+    end
+    for _, b in ipairs(searchButtons) do
+        b.title:SetFont(path, 13, "")
+        b.preview:SetFont(path, 12, "")
+    end
+    if settings and settings.previewText then
+        settings.previewText:SetFont(path, db.fontSize + 2, "")
+    end
+    if customEditor then
+        for _, row in ipairs(customEditor.fields) do
+            row.label:SetFont(path, 12, "")
+            row.template:SetFont(path, 12, "")
+        end
+    end
+    styleBrand()
+end
+
+local function applyTheme()
+    if not window then return end
+    if transcript and transcript.Restyle then transcript:Restyle() end
+    local t = themes[db.theme]
+    local art = themeArtwork[db.theme]
+    local enabled = db.artwork and art ~= nil
+    if window.artCorner then
+        if enabled then
+            local path = "Interface\\AddOns\\ForeverWhisper\\UI\\" .. art[1] .. ".tga"
+            local atmosphere = "Interface\\AddOns\\ForeverWhisper\\UI\\" .. art[1]:gsub("Corner", "Atmosphere") .. ".tga"
+            window.artCorner:SetTexture(path)
+            window.artSide:SetTexture(path)
+            window.artAmbient:SetTexture(atmosphere)
+            window.artHeader:SetTexture(atmosphere)
+            window.artCorner:SetVertexColor(1, 1, 1, db.artBrightness)
+            window.artSide:SetVertexColor(1, 1, 1, db.artBrightness * 0.90)
+            window.artAmbient:SetVertexColor(1, 1, 1, db.artBrightness * 0.30)
+            window.artHeader:SetVertexColor(1, 1, 1, db.artBrightness * 0.60)
+        end
+        window.artCorner:SetShown(enabled)
+        window.artSide:SetShown(enabled and art[2])
+        window.artAmbient:SetShown(enabled)
+        window.artHeader:SetShown(enabled)
+    end
+    styleBrand()
+    if window.brand then
+        window.brand:SetTextColor(db.theme == 9 and 0.96 or 0.92, db.theme == 9 and 0.82 or 0.96, db.theme == 9 and 0.90 or 1)
+    end
+    if contactMenu then contactMenu.bg:SetColorTexture(t[2], t[3], t[4], 1) end
+    if customEditor then customEditor.bg:SetColorTexture(t[2], t[3], t[4], 1) end
+    -- Keep the base transparent; each visible panel supplies one opacity layer.
+    window.background:SetColorTexture(t[2], t[3], t[4], 0)
+    window.headerBackground:SetColorTexture(t[2] * 0.45, t[3] * 0.45, t[4] * 0.45, db.opacity)
+    window.sideBackground:SetColorTexture(t[2] * 0.50, t[3] * 0.50, t[4] * 0.50, db.opacity)
+    window.chatBackground:SetColorTexture(t[2] * 0.70, t[3] * 0.70, t[4] * 0.70, db.opacity)
+    window.actionBackground:SetColorTexture(t[2] * 0.85, t[3] * 0.85, t[4] * 0.85, db.opacity)
+    window.composeBackground:SetColorTexture(t[2] * 1.8, t[3] * 1.8, t[4] * 1.8, db.opacity)
+    window.searchBackground:SetColorTexture(t[2] * 0.8, t[3] * 0.8, t[4] * 0.8, db.opacity)
+    window.searchFieldBackground:SetColorTexture(t[2] * 1.8, t[3] * 1.8, t[4] * 1.8, 1)
+    window.paletteBackground:SetColorTexture(t[2] * 1.2, t[3] * 1.2, t[4] * 1.2, 1)
+    if window.filterBackground then
+        window.filterBackground:SetColorTexture(t[2] * 1.4, t[3] * 1.4, t[4] * 1.4, 1)
+    end
+    if window.composeLine then
+        window.composeLine:SetColorTexture(t[5], t[6], t[7], 0.65)
+    end
+    if actionMenu then actionMenu.bg:SetColorTexture(t[2], t[3], t[4], 1) end
+    if newChat then newChat.bg:SetColorTexture(t[2], t[3], t[4], 1) end
+    window.accent:SetColorTexture(t[5], t[6], t[7], 1)
+    window.heading:SetTextColor(t[5], t[6], t[7])
+    for _, b in ipairs(styledButtons) do
+        b.bg:SetColorTexture(t[2] * 1.55, t[3] * 1.55, t[4] * 1.55, 0.96)
+        b.hover:SetColorTexture(t[5], t[6], t[7], 0.15)
+    end
+    for _, b in ipairs(contactButtons) do
+        b.highlight:SetColorTexture(t[5] * 0.28, t[6] * 0.28, t[7] * 0.28, 0.95)
+        b.hover:SetColorTexture(t[5], t[6], t[7], 0.12)
+        b.rail:SetColorTexture(t[5], t[6], t[7], 1)
+        b.avatarBackground:SetColorTexture(t[5] * 0.18, t[6] * 0.18, t[7] * 0.18, 1)
+        b.initial:SetTextColor(t[5], t[6], t[7])
+        b.unreadBackground:SetColorTexture(t[5] * 0.45, t[6] * 0.45, t[7] * 0.45, 1)
+    end
+    for _, b in ipairs(searchButtons) do
+        b.bg:SetColorTexture(t[2] * 1.6, t[3] * 1.6, t[4] * 1.6, 1)
+    end
+    if window.ignoreButton then
+        window.ignoreButton.bg:SetColorTexture(0.23, 0.19, 0.22, 1)
+        window.clearButton.bg:SetColorTexture(0.27, 0.16, 0.19, 1)
+    end
+    if window.sendButton then
+        window.sendButton.bg:SetColorTexture(t[5] * 0.42, t[6] * 0.42, t[7] * 0.42, 1)
+    end
+    if settings and settings.previewText then
+        settings.background:SetColorTexture(t[2] * 0.8, t[3] * 0.8, t[4] * 0.8, db.opacity)
+        settings.previewBackground:SetColorTexture(t[2] * 1.45, t[3] * 1.45, t[4] * 1.45, 1)
+        for _, background in ipairs(settings.selectorBackgrounds) do
+            background:SetColorTexture(t[2] * 1.65, t[3] * 1.65, t[4] * 1.65, 1)
+        end
+        settings.previewText:SetTextColor(t[5], t[6], t[7])
+        settings.previewAccent:SetColorTexture(t[5], t[6], t[7], 1)
+        if settings.artPreview then
+            local p = settings.artPreview
+            p.bg:SetColorTexture(t[2] * 0.7, t[3] * 0.7, t[4] * 0.7, 1)
+            p.themeName:SetText(t[1])
+            if p:IsShown() then
+                p.image:SetTexture("Interface\\AddOns\\ForeverWhisper\\UI\\" .. art[1] .. ".tga")
+                local atmosphere = "Interface\\AddOns\\ForeverWhisper\\UI\\" .. art[1]:gsub("Corner", "Atmosphere") .. ".tga"
+                p.ambient:SetTexture(atmosphere)
+                p.headerArt:SetTexture(atmosphere)
+            end
+            p.image:SetVertexColor(1, 1, 1, db.artBrightness)
+            p.ambient:SetVertexColor(1, 1, 1, db.artBrightness * 0.30)
+            p.headerArt:SetVertexColor(1, 1, 1, db.artBrightness * 0.60)
+            p.notice:SetText(db.artwork and "Preview updates your chat style" or "Artwork is off in chat; preview only")
+        end
+        for _, thumb in ipairs(settings.sliderThumbs) do thumb:SetColorTexture(t[5], t[6], t[7], 1) end
+        for _, marker in ipairs(settings.checkMarkers) do marker:SetColorTexture(t[5], t[6], t[7], 1) end
+    end
+end
+
+local function refreshTranscript(preserveScroll, newMessage)
+    if not transcript then return end
+    local offset = preserveScroll and transcript.GetScrollOffset and transcript:GetScrollOffset() or 0
+    transcript:Clear()
+    local c = current and db.conversations[current]
+    if window.empty then window.empty:SetShown(not c or #c.messages == 0) end
+    if input and input.hint then
+        input.hint:SetText(c and "Write a message..." or "Select a chat to write a message")
+    end
+    if not c then
+        window.heading:SetText(settings and settings:IsShown() and "Preferences" or "Forever Whisper")
+        refreshPresence()
+        if window.pinButton then window.pinButton:SetText("Pin") end
+        return
+    end
+    if not settings or not settings:IsShown() then window.heading:SetText(c.name) end
+    refreshPresence()
+    if window.pinButton then window.pinButton:SetText(c.pinned and "Unpin" or "Pin") end
+    local previous
+    for i, item in ipairs(c.messages) do
+        local stamp = db.timestamps and ("   |cff778899" .. date("%H:%M", item.at) .. "|r") or ""
+        local color = item.outgoing and "|cff89cfff" or "|cffffcf83"
+        local speaker = "[" .. (item.outgoing and "You" or c.name) .. "]"
+        local prefix = searchJump and searchJump.key == current and searchJump.index == i
+            and "|cff72eadb>> |r" or ""
+        local day = date("%d %b", item.at)
+        local newDay = not previous or date("%d %b", previous.at) ~= day
+        local group = newDay or previous.outgoing ~= item.outgoing or item.at - previous.at > 120
+        local linkedSpeaker = not item.outgoing and ("|Hfwplayer:" .. current .. "|h" .. speaker .. "|h") or speaker
+        local heading = group and (color .. linkedSpeaker .. "|r" .. stamp .. "\n") or ""
+        local dateLine = newDay and ("|cff778899" .. day .. "|r\n") or ""
+        local body, who, quote = NS.DecodeReply(item.text)
+        local quoted = who and ("|cff7fcbbb> " .. NS.Excerpt(who, 40) .. ": " .. NS.Excerpt(quote) .. "|r\n") or ""
+        transcript:AddMessage(dateLine .. heading .. quoted .. prefix .. "|cffd6e1eb  " .. renderEmoji(renderMapPins(body)) .. "|r", item.outgoing)
+        previous = item
+    end
+    transcript:ScrollToBottom()
+    if offset > 0 and transcript.SetScrollOffset then transcript:SetScrollOffset(offset + (newMessage and 1 or 0)) end
+    if window.latest then window.latest:SetShown(offset > 0) end
+    if searchJump and searchJump.key == current and transcript.SetScrollOffset then
+        transcript:SetScrollOffset(math.max(0, #c.messages - searchJump.index))
+    end
+end
+
+local function refreshContacts()
+    if not window then return end
+    local sorted = names()
+    if contactQuery ~= "" then
+        local filtered = {}
+        for _, item in ipairs(sorted) do
+            if string.find(string.lower(item.data.name), contactQuery, 1, true) then
+                filtered[#filtered + 1] = item
+            end
+        end
+        sorted = filtered
+    end
+    local visible = math.min(#contactButtons, math.floor((db.height - 145) / 58))
+    contactOffset = clamp(contactOffset, 0, math.max(0, #sorted - visible))
+    for i, b in ipairs(contactButtons) do
+        local item = sorted[i + contactOffset]
+        if item and i <= visible then
+            b.key = item.key
+            local unread = tonumber(item.data.unread) or 0
+            b.name:SetText(item.data.name)
+            local status, source, area = contactPresence(item.data.name, item.data)
+            b.statusDot:SetTexture(status == true and "Interface\\FriendsFrame\\StatusIcon-Online"
+                or "Interface\\FriendsFrame\\StatusIcon-Offline")
+            b.statusDot:SetVertexColor(1, status == false and 0.45 or 1, status == false and 0.45 or 1, 1)
+            b.detail:SetText(status == true and ((area and area ~= "") and area or "Online")
+                or (status == false and "Offline" or "Status unavailable"))
+            if item.data.kind == "bnet" then b.detail:SetText("Battle.net  ·  " .. b.detail:GetText()) end
+            local last = item.data.messages[#item.data.messages]
+            local preview = last and ((last.outgoing and "You: " or "") .. last.text) or "Start the conversation"
+            preview = preview:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+                :gsub("|H.-|h(.-)|h", "%1"):gsub("|T.-|t", "[image]"):gsub("[\r\n]", " ")
+            b.preview:SetText((item.data.pinned and "|cff9ab5cbPIN  |r" or "") .. preview)
+            if social and social:IsTyping(item.data.name) then
+                b.preview:SetText("|cff70dcccTyping...|r")
+            end
+            b.initial:SetText(string.upper(item.data.name:match("^.[\128-\191]*") or "?"))
+            b.unread:SetText(unread > 99 and "99+" or tostring(unread))
+            b.unreadBadge:SetShown(unread > 0)
+            b.highlight:SetShown(item.key == current)
+            b.rail:SetShown(item.key == current)
+            b:Show()
+        else
+            b.key = nil
+            b:Hide()
+        end
+    end
+    if window.contactCount then window.contactCount:SetText("CHATS  /  " .. #sorted) end
+end
+
+local function selectConversation(key)
+    local c = db.conversations[key]
+    if not c then return end
+    searchJump = nil
+    if current and input then drafts[current] = input:GetText() end
+    if social then social:Stop() end
+    current = key
+    if contactQuery ~= "" and not string.find(string.lower(c.name), contactQuery, 1, true)
+        and window.contactFilter then window.contactFilter:SetText("") end
+    if input then input:SetText(drafts[key] or "") end
+    if updateReplyPreview then updateReplyPreview() end
+    if social and c.kind ~= "bnet" and contactPresence(c.name, c) == true then social:Probe(c.name) end
+    if palette then palette:Hide() end
+    if actionMenu then actionMenu:Hide() end
+    c.unread = 0
+    refreshContacts()
+    refreshTranscript()
+    refreshMinimap()
+end
+
+
+local function pinNotice(message)
+    DEFAULT_CHAT_FRAME:AddMessage("Forever Whisper: " .. message)
+end
+
+local function openMapPin(mapID, x, y)
+    if not validPin(mapID, x, y) then return end
+    if C_Map and C_Map.GetMapInfo and not C_Map.GetMapInfo(mapID) then
+        pinNotice("This map is unavailable on your client.")
+        return
+    end
+    local pointType = UiMapPoint or UIMapPoint
+    local native = false
+    if C_Map and C_Map.SetUserWaypoint and pointType and pointType.CreateFromCoordinates then
+        if not C_Map.CanSetUserWaypointOnMap or C_Map.CanSetUserWaypointOnMap(mapID) then
+            local ok, set = pcall(C_Map.SetUserWaypoint, pointType.CreateFromCoordinates(mapID, x, y))
+            native = ok and set == true
+            if native and C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint then
+                C_SuperTrack.SetSuperTrackedUserWaypoint(true)
+            end
+        end
+    end
+    if not WorldMapFrame and UIParentLoadAddOn then UIParentLoadAddOn("Blizzard_WorldMap") end
+    local map = WorldMapFrame
+    if not map then pinNotice(string.format("Map pin: %.1f, %.1f (map %d).", x * 100, y * 100, mapID)); return end
+    if ShowUIPanel then ShowUIPanel(map) else map:Show() end
+    if map.SetMapID then map:SetMapID(mapID)
+    elseif SetMapByID then SetMapByID(mapID) end
+    if native then
+        if mapPinMarker then mapPinMarker:Hide() end
+        return
+    end
+    local canvas = map.GetCanvas and map:GetCanvas() or
+        (map.ScrollContainer and map.ScrollContainer.Child) or WorldMapDetailFrame
+    if not canvas then pinNotice(string.format("Pin coordinates: %.1f, %.1f.", x * 100, y * 100)); return end
+    if not mapPinMarker then
+        mapPinMarker = CreateFrame("Frame", "ForeverWhisperMapPin", canvas)
+        mapPinMarker:SetSize(28, 28)
+        mapPinMarker:SetFrameLevel(canvas:GetFrameLevel() + 30)
+        mapPinMarker:EnableMouse(true)
+        local icon = mapPinMarker:CreateTexture(nil, "ARTWORK")
+        icon:SetAllPoints()
+        icon:SetTexture("Interface\AddOns\ForeverWhisper\Emoji\1f3af.png")
+        mapPinMarker:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(string.format("Shared pin: %.1f, %.1f", self.x * 100, self.y * 100))
+            GameTooltip:Show()
+        end)
+        mapPinMarker:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        local function updateMarker()
+            local currentMap = map.GetMapID and map:GetMapID() or (GetCurrentMapAreaID and GetCurrentMapAreaID())
+            local shown = mapPinMarker.mapID ~= nil and currentMap == mapPinMarker.mapID
+            mapPinMarker:SetShown(shown)
+            if shown then
+                mapPinMarker:ClearAllPoints()
+                mapPinMarker:SetPoint("CENTER", canvas, "TOPLEFT", canvas:GetWidth() * mapPinMarker.x,
+                    -canvas:GetHeight() * mapPinMarker.y)
+            end
+        end
+        mapPinMarker.update = updateMarker
+        if canvas.HookScript then canvas:HookScript("OnSizeChanged", updateMarker) end
+        if map.HookScript then map:HookScript("OnShow", updateMarker) end
+        if hooksecurefunc and map.SetMapID then hooksecurefunc(map, "SetMapID", updateMarker)
+        elseif map.HookScript then map:HookScript("OnEvent", updateMarker) end
+    end
+    mapPinMarker.mapID, mapPinMarker.x, mapPinMarker.y = mapID, x, y
+    mapPinMarker.update()
+end
+
+local function prepareMapPin(key, activeWaypoint)
+    if inCombat() or not db.conversations[key] then return end
+    local mapID, x, y, nativeLink
+    if activeWaypoint and C_Map and C_Map.GetUserWaypoint then
+        local point = C_Map.GetUserWaypoint()
+        if point and point.position then
+            mapID = point.uiMapID
+            x, y = point.position:GetXY()
+            if C_Map.GetUserWaypointHyperlink then nativeLink = C_Map.GetUserWaypointHyperlink() end
+        end
+    elseif C_Map and C_Map.GetBestMapForUnit and C_Map.GetPlayerMapPosition then
+        mapID = C_Map.GetBestMapForUnit("player")
+        local position = mapID and C_Map.GetPlayerMapPosition(mapID, "player")
+        if position then x, y = position:GetXY() end
+    elseif GetPlayerMapPosition and GetCurrentMapAreaID then
+        -- Do not change the user's selected map simply to obtain coordinates.
+        mapID = GetCurrentMapAreaID()
+        x, y = GetPlayerMapPosition("player")
+    end
+    if not validPin(mapID, x, y) or (x == 0 and y == 0) then
+        pinNotice(activeWaypoint and "No active map pin to share." or "Coordinates are unavailable here. Try outdoors.")
+        return
+    end
+    -- Native clients can generate a standard clickable worldmap link. Preserve
+    -- the existing waypoint; older clients use the readable addon pin token.
+    local pointType = UiMapPoint or UIMapPoint
+    if not nativeLink and C_Map and C_Map.GetUserWaypoint and C_Map.GetUserWaypointHyperlink
+        and C_Map.SetUserWaypoint and C_Map.ClearUserWaypoint and pointType and pointType.CreateFromCoordinates
+        and (not C_Map.CanSetUserWaypointOnMap or C_Map.CanSetUserWaypointOnMap(mapID)) then
+        local previous = C_Map.GetUserWaypoint()
+        local ok, result = pcall(function()
+            if C_Map.SetUserWaypoint(pointType.CreateFromCoordinates(mapID, x, y)) then
+                return C_Map.GetUserWaypointHyperlink()
+            end
+        end)
+        if previous then C_Map.SetUserWaypoint(previous) else C_Map.ClearUserWaypoint() end
+        if ok and type(result) == "string" then nativeLink = result end
+    end
+    local info = C_Map and C_Map.GetMapInfo and C_Map.GetMapInfo(mapID)
+    local zone = info and info.name or (GetRealZoneText and GetRealZoneText()) or "Map"
+    zone = zone:gsub("[|%[%]\r\n]", "")
+    local text = nativeLink or string.format("[Pin: %s %.1f, %.1f] {fwmap:%d:%d:%d}", zone,
+        x * 100, y * 100, mapID, math.floor(x * 10000 + 0.5), math.floor(y * 10000 + 0.5))
+    selectConversation(key)
+    showView("chat")
+    local draft = input:GetText()
+    input:SetText(draft .. (draft:match("%S") and " " or "") .. text)
+    input:SetFocus()
+end
+
+local function refreshSearchResults()
+    if not searchView then return end
+    searchOffset = clamp(searchOffset, 0, math.max(0, #searchResults - #searchButtons))
+    for i, b in ipairs(searchButtons) do
+        local result = searchResults[i + searchOffset]
+        b.result = result
+        if result then
+            if result.kind == "person" then
+                b.title:SetText("|cff72eadbPERSON|r  " .. result.name)
+                b.preview:SetText("Open conversation  |cff8198a8" .. result.saved .. " saved messages|r")
+            else
+                b.title:SetText(result.name .. "  |cff8198a8" .. date("%d %b %H:%M", result.at) .. "|r")
+                b.preview:SetText(result.text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))
+            end
+            b:Show()
+        else
+            b:Hide()
+        end
+    end
+    if searchView.page then
+        if #searchResults == 0 then
+            searchView.page:SetText("")
+        else
+            searchView.page:SetText((searchOffset + 1) .. "-" ..
+                math.min(#searchResults, searchOffset + #searchButtons) ..
+                " of " .. #searchResults)
+        end
+    end
+end
+
+local function performSearch()
+    if not searchInput then return end
+    local query = searchInput:GetText():match("^%s*(.-)%s*$")
+    searchResults, searchOffset = {}, 0
+    if #query < 2 then
+        searchStatus:SetText("Type at least 2 characters, then press Enter.")
+        refreshSearchResults()
+        return
+    end
+    query = string.lower(query)
+    local people, messageMatches = {}, {}
+    local peopleCount, messageCount = 0, 0
+    for key, c in pairs(db.conversations) do
+        if string.find(string.lower(c.name or key), query, 1, true) then
+            peopleCount = peopleCount + 1
+            people[#people + 1] = { kind = "person", key = key, name = c.name,
+                saved = #c.messages, at = c.last }
+        end
+        for i, item in ipairs(c.messages) do
+            if string.find(string.lower(item.text), query, 1, true) then
+                messageCount = messageCount + 1
+                local result = { kind = "message", key = key, name = c.name, index = i,
+                    text = item.text, at = item.at }
+                if #messageMatches < 60 then
+                    messageMatches[#messageMatches + 1] = result
+                else
+                    local oldest = 1
+                    for j = 2, #messageMatches do
+                        if messageMatches[j].at < messageMatches[oldest].at then oldest = j end
+                    end
+                    if result.at > messageMatches[oldest].at then messageMatches[oldest] = result end
+                end
+            end
+        end
+    end
+    table.sort(people, function(a, b)
+        if a.at == b.at then return a.key < b.key end
+        return a.at > b.at
+    end)
+    table.sort(messageMatches, function(a, b)
+        if a.at == b.at then return a.key < b.key end
+        return a.at > b.at
+    end)
+    for _, result in ipairs(people) do
+        if #searchResults >= 60 then break end
+        searchResults[#searchResults + 1] = result
+    end
+    for _, result in ipairs(messageMatches) do
+        if #searchResults >= 60 then break end
+        searchResults[#searchResults + 1] = result
+    end
+    if peopleCount + messageCount == 0 then
+        searchStatus:SetText("No matching people or saved messages.")
+    else
+        local summary = peopleCount .. (peopleCount == 1 and " person, " or " people, ") ..
+            messageCount .. (messageCount == 1 and " message" or " messages")
+        if peopleCount + messageCount > 60 then summary = summary .. " (showing 60)" end
+        searchStatus:SetText(summary .. ".")
+    end
+    refreshSearchResults()
+end
+
+local function savePosition()
+    if not window then return end
+    local _, _, _, x, y = window:GetPoint(1)
+    db.x, db.y = x or 0, y or 0
+end
+
+local function copyHistory(key)
+    local c = db.conversations[type(key) == "string" and key or current]
+    if not c then return end
+    if not copyWindow then
+        copyWindow = CreateFrame("Frame", "ForeverWhisperCopyWindow", UIParent)
+        copyWindow:SetSize(560, 360)
+        copyWindow:SetPoint("CENTER")
+        copyWindow:SetFrameStrata("FULLSCREEN_DIALOG")
+        copyWindow:EnableMouse(true)
+        fill(copyWindow, 0.09, 0.12, 0.18, 0.99)
+        label(copyWindow, "Select text, then press Ctrl+C", 15, "TOPLEFT", 16, -14)
+        local close = button(copyWindow, "Close", 66, 23, function() copyWindow:Hide() end)
+        close:SetPoint("TOPRIGHT", -12, -11)
+        local scroll = CreateFrame("ScrollFrame", nil, copyWindow)
+        scroll:SetPoint("TOPLEFT", 17, -45)
+        scroll:SetPoint("BOTTOMRIGHT", -17, 16)
+        local child = CreateFrame("Frame", nil, scroll)
+        child:SetWidth(510)
+        scroll:SetScrollChild(child)
+        copyBox = CreateFrame("EditBox", nil, child)
+        copyBox:SetPoint("TOPLEFT")
+        copyBox:SetWidth(510)
+        copyBox:SetMultiLine(true)
+        copyBox:SetAutoFocus(false)
+        copyBox:SetFont("Fonts\\ARIALN.TTF", 13, "")
+        copyBox:SetTextColor(0.92, 0.94, 1)
+        copyBox:SetScript("OnEscapePressed", function() copyWindow:Hide() end)
+        scroll:EnableMouseWheel(true)
+        scroll:SetScript("OnMouseWheel", function(self, delta)
+            self:SetVerticalScroll(math.max(0, self:GetVerticalScroll() - delta * 35))
+        end)
+        copyWindow.child = child
+        copyWindow.scroll = scroll
+    end
+    local lines, size = {}, 0
+    for _, item in ipairs(c.messages) do
+        local line = date("%Y-%m-%d %H:%M", item.at) .. "  " ..
+            (item.outgoing and "You" or c.name) .. ": " .. item.text
+        -- Chat color/texture codes are not useful in a copied transcript.
+        line = line:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+        line = line:gsub("{rt([1-8])}", "[marker %1]")
+        lines[#lines + 1] = line
+        size = size + #line
+    end
+    copyBox:SetText(table.concat(lines, "\n"))
+    local height = math.max(295, #lines * 18 + math.ceil(size / 75) * 14)
+    copyBox:SetHeight(height)
+    copyWindow.child:SetHeight(height)
+    copyWindow.scroll:SetVerticalScroll(0)
+    copyWindow:Show()
+    copyBox:SetFocus()
+    copyBox:HighlightText()
+end
+
+
+local function togglePin(key)
+    local c = db.conversations[key]
+    if not c then return end
+    if not c.pinned then
+        local count = 0
+        for _, item in pairs(db.conversations) do if item.pinned then count = count + 1 end end
+        if count >= 10 then
+            DEFAULT_CHAT_FRAME:AddMessage("Forever Whisper: you can pin up to 10 chats.")
+            return
+        end
+    end
+    c.pinned = not c.pinned
+    refreshContacts()
+    if key == current then refreshTranscript(true) end
+end
+
+local function editCustomActions()
+    if not customEditor then
+        customEditor = CreateFrame("Frame", "ForeverWhisperCustomActions", window)
+        customEditor:SetSize(550, 310)
+        customEditor:SetPoint("CENTER")
+        customEditor:SetFrameLevel(window:GetFrameLevel() + 65)
+        customEditor:EnableMouse(true)
+        customEditor.bg = fill(customEditor, 0.055, 0.075, 0.105, 1, true)
+        customEditor.fields = {}
+        if UISpecialFrames then UISpecialFrames[#UISpecialFrames + 1] = "ForeverWhisperCustomActions" end
+        label(customEditor, "Your right-click shortcuts", 18, "TOPLEFT", 20, -18)
+        local close = button(customEditor, "X", 26, 26, function() customEditor:Hide() end)
+        close:SetPoint("TOPRIGHT", -12, -12)
+        label(customEditor, "Label", 11, "TOPLEFT", 20, -58)
+        label(customEditor, "Message or /command", 11, "TOPLEFT", 182, -58)
+        for i = 1, 3 do
+            local row = {}
+            for column, field in ipairs({ "label", "template" }) do
+                local edit = CreateFrame("EditBox", nil, customEditor)
+                edit:SetPoint("TOPLEFT", column == 1 and 20 or 182, -79 - (i - 1) * 44)
+                edit:SetSize(column == 1 and 150 or 348, 32)
+                edit:SetFont(fonts[db.font][2], 12, "")
+                edit:SetTextInsets(8, 8, 0, 0)
+                edit:SetAutoFocus(false)
+                edit:SetMaxLetters(column == 1 and 24 or 200)
+                fill(edit, 0.13, 0.17, 0.23, 1, true)
+                edit:SetScript("OnEscapePressed", function(self) self:ClearFocus(); customEditor:Hide() end)
+                row[field] = edit
+            end
+            customEditor.fields[i] = row
+        end
+        local help = label(customEditor, "Use {name} and {zone}. Messages fill your whisper draft.\n/commands fill WoW chat; press Enter there to run them.\nLeave a row empty to remove it.", 11, "TOPLEFT", 20, -216)
+        help:SetTextColor(0.65, 0.76, 0.85)
+        local save = button(customEditor, "Save shortcuts", 126, 30, function()
+            local actions = {}
+            for _, row in ipairs(customEditor.fields) do
+                local name = row.label:GetText():gsub("[\r\n|]", ""):match("^%s*(.-)%s*$")
+                local template = row.template:GetText():gsub("[\r\n]", " "):match("^%s*(.-)%s*$")
+                if name ~= "" and template ~= "" then actions[#actions + 1] = { label = name, template = template } end
+            end
+            db.customActions = actions
+            customEditor:Hide()
+        end)
+        save:SetPoint("BOTTOMRIGHT", -20, 16)
+        customEditor:SetScript("OnHide", function()
+            for _, row in ipairs(customEditor.fields) do row.label:ClearFocus(); row.template:ClearFocus() end
+        end)
+        applyTheme()
+    end
+    for i, row in ipairs(customEditor.fields) do
+        local action = db.customActions[i]
+        row.label:SetText(action and action.label or "")
+        row.template:SetText(action and action.template or "")
+    end
+    customEditor:Show()
+end
+
+openContactMenu = function(key, owner)
+    local c = db.conversations[key]
+    if not c or inCombat() then return end
+    GameTooltip:Hide()
+    if palette then palette:Hide() end
+    if actionMenu then actionMenu:Hide() end
+    if not contactMenu then
+        contactMenu = CreateFrame("Frame", "ForeverWhisperContactMenu", window)
+        contactMenu:SetWidth(244)
+        contactMenu:SetFrameLevel(window:GetFrameLevel() + 45)
+        contactMenu:SetClampedToScreen(true)
+        contactMenu:EnableMouse(true)
+        contactMenu.bg = fill(contactMenu, 0.055, 0.075, 0.105, 1, true)
+        contactMenu.title = label(contactMenu, "", 14, "TOPLEFT", 14, -13)
+        contactMenu.title:SetWidth(216)
+        contactMenu.title:SetWordWrap(false)
+        contactMenu.rows = {}
+        contactMenu.blocker = CreateFrame("Frame", nil, window)
+        contactMenu.blocker:SetAllPoints()
+        contactMenu.blocker:SetFrameLevel(window:GetFrameLevel() + 44)
+        contactMenu.blocker:EnableMouse(true)
+        contactMenu.blocker:SetScript("OnMouseDown", function() contactMenu:Hide() end)
+        for i = 1, 16 do
+            local b = button(contactMenu, "", 224, 27, function() end)
+            -- The action closure is replaced each time the menu opens; it never
+            -- resolves the recipient from the currently selected conversation.
+            b:SetScript("OnClick", function(self)
+                local action = self.action
+                contactMenu:Hide()
+                if action then action() end
+            end)
+            b:SetPoint("TOPLEFT", 10, -39 - (i - 1) * 29)
+            b.fontSize = 12
+            b.fontText:SetFont(fonts[db.font][2], 12, "")
+            contactMenu.rows[i] = b
+        end
+        contactMenu:SetScript("OnHide", function() contactMenu.blocker:Hide() end)
+        if UISpecialFrames then UISpecialFrames[#UISpecialFrames + 1] = "ForeverWhisperContactMenu" end
+        applyTheme()
+    end
+    local entries = {}
+    local function add(text, action)
+        entries[#entries + 1] = { text = text, action = function()
+            if db.conversations[key] and not inCombat() then action() end
+        end }
+    end
+    add("Whisper", function() selectConversation(key); showView("chat"); input:SetFocus() end)
+    if c.kind == "bnet" then
+        if NS.CanInviteBNet(c) then add("Invite to group", function() NS.InviteBNet(c) end) end
+    else
+    add("Invite to group", function()
+        if C_PartyInfo and C_PartyInfo.InviteUnit then C_PartyInfo.InviteUnit(c.name)
+        elseif InviteUnit then InviteUnit(c.name) end
+    end)
+    if (C_FriendList and C_FriendList.AddFriend) or AddFriend then
+        add("Add friend", function()
+            if C_FriendList and C_FriendList.AddFriend then C_FriendList.AddFriend(c.name)
+            elseif AddFriend then AddFriend(c.name) end
+        end)
+    end
+    add("Ignore player...", function() StaticPopup_Show("FOREVERWHISPER_IGNORE", c.name, nil, c.name) end)
+    if UnitPopup_OpenMenu or SetItemRef then
+        add("Report / WoW player menu...", function()
+            if UnitPopup_OpenMenu then
+                UnitPopup_OpenMenu("FRIEND", { name = c.name, guid = c.guid, lineID = c.lineID,
+                    chatType = "WHISPER", chatTarget = c.name })
+            else
+                SetItemRef("player:" .. c.name .. ":" .. (c.lineID or 0) .. ":WHISPER:" .. c.name,
+                    "[" .. c.name .. "]", "RightButton", DEFAULT_CHAT_FRAME)
+            end
+        end)
+    end
+    end -- Character-only friend/ignore/report actions must never target a BattleTag.
+    add(c.pinned and "Unpin conversation" or "Pin conversation", function() togglePin(key) end)
+    add(c.kind == "bnet" and "Copy BattleTag" or "Copy character name", function()
+        copyHistory(key)
+        copyBox:SetText(c.name)
+        copyBox:HighlightText()
+    end)
+    add("Copy conversation", function() copyHistory(key) end)
+    add("Share my position pin", function() prepareMapPin(key) end)
+    if C_Map and C_Map.GetUserWaypoint and C_Map.GetUserWaypoint() then
+        add("Share active map pin", function() prepareMapPin(key, true) end)
+    end
+    add("Clear history...", function() StaticPopup_Show("FOREVERWHISPER_CLEAR", c.name, nil, key) end)
+    for _, item in ipairs(db.customActions) do
+        local action = item
+        if c.kind ~= "bnet" or action.template:sub(1, 1) ~= "/" then
+        add(action.label, function()
+            local text = action.template:gsub("{name}", function() return c.name end)
+                :gsub("{zone}", function() return GetRealZoneText and GetRealZoneText() or "" end)
+            if text:sub(1, 1) == "/" then
+                if ChatFrame_OpenChat then ChatFrame_OpenChat(text, DEFAULT_CHAT_FRAME) end
+            else
+                selectConversation(key)
+                showView("chat")
+                input:SetText(text)
+                input:SetFocus()
+            end
+        end)
+        end
+    end
+    add("Customize actions...", editCustomActions)
+    contactMenu.title:SetText(c.name)
+    for i, row in ipairs(contactMenu.rows) do
+        local entry = entries[i]
+        row:SetShown(entry ~= nil)
+        row.action = entry and entry.action
+        if entry then row:SetText(entry.text) end
+    end
+    contactMenu:SetHeight(44 + #entries * 29)
+    contactMenu:ClearAllPoints()
+    if GetCursorPosition then
+        local x, y = GetCursorPosition()
+        local scale = contactMenu:GetEffectiveScale()
+        contactMenu:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x / scale, y / scale)
+    else
+        contactMenu:SetPoint("TOPLEFT", owner, "BOTTOMLEFT", 0, 0)
+    end
+    contactMenu.blocker:Show()
+    contactMenu:Show()
+end
+
+local function makeWindow()
+    if window then return end
+    window = CreateFrame("Frame", "ForeverWhisperWindow", UIParent)
+    if UISpecialFrames then
+        UISpecialFrames[#UISpecialFrames + 1] = "ForeverWhisperWindow"
+    end
+    window:SetSize(db.width, db.height)
+    window:SetScale(db.scale)
+    window:SetPoint("CENTER", UIParent, "CENTER", db.x, db.y)
+    window:SetFrameStrata("DIALOG")
+    window:SetMovable(true)
+    if window.SetResizable then window:SetResizable(true) end
+    if window.SetResizeBounds then
+        window:SetResizeBounds(700, 480, 1200, 850)
+    else
+        if window.SetMinResize then window:SetMinResize(700, 480) end
+        if window.SetMaxResize then window:SetMaxResize(1200, 850) end
+    end
+    window:EnableMouse(true)
+    window:SetClampedToScreen(true)
+    window:RegisterForDrag("LeftButton")
+    window:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    window:SetScript("OnDragStop", function(self) self:StopMovingOrSizing(); savePosition() end)
+    window.background = fill(window, 0.05, 0.07, 0.12, db.opacity)
+    local header = surface(window, "BORDER")
+    header:SetPoint("TOPLEFT")
+    header:SetPoint("TOPRIGHT")
+    header:SetHeight(54)
+    header:SetColorTexture(0.025, 0.045, 0.075, 0.94)
+    window.headerBackground = header
+    window.artHeader = window:CreateTexture(nil, "ARTWORK")
+    window.artHeader:SetPoint("TOP", 0, -3)
+    window.artHeader:SetSize(240, 48)
+    window.artHeader:SetTexCoord(0, 1, 0, 0.20)
+    window.accent = window:CreateTexture(nil, "BORDER")
+    window.accent:SetPoint("TOPLEFT", 0, 0)
+    window.accent:SetPoint("TOPRIGHT", 0, 0)
+    window.accent:SetHeight(3)
+    window.heading = label(window, "Forever Whisper", db.fontSize + 3, "TOPLEFT", CONTENT_LEFT, -14)
+    window.heading:SetPoint("TOPRIGHT", window, "TOPRIGHT", -230, -14)
+    window.heading:SetJustifyH("LEFT")
+    window.presence = label(window, "", 11, "TOPLEFT", CONTENT_LEFT, -36)
+    window.presence:SetWidth(210)
+    window.presence:SetJustifyH("LEFT")
+    window.presence:SetTextColor(0.63, 0.73, 0.80)
+    local nameTarget = CreateFrame("Button", nil, window)
+    window.nameTarget = nameTarget
+    nameTarget:SetPoint("TOPLEFT", CONTENT_LEFT, -5)
+    nameTarget:SetPoint("TOPRIGHT", -230, -5)
+    nameTarget:SetHeight(44)
+    nameTarget:RegisterForClicks("RightButtonUp")
+    nameTarget:RegisterForDrag("LeftButton")
+    nameTarget:SetScript("OnClick", function(self) if activeView == "chat" and current then openContactMenu(current, self) end end)
+    nameTarget:SetScript("OnDragStart", function() window:StartMoving() end)
+    nameTarget:SetScript("OnDragStop", function() window:StopMovingOrSizing(); savePosition() end)
+    nameTarget:SetScript("OnEnter", function(self)
+        if activeView ~= "chat" or not current then return end
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:SetText("Right-click for player actions")
+        GameTooltip:Show()
+    end)
+    nameTarget:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    window.brand = label(window, "WHISPER", 19, "TOPLEFT", 18, -10)
+    window.brand:SetTextColor(0.92, 0.96, 1)
+    label(window, "F O R E V E R", 9, "TOPLEFT", 19, -33):SetTextColor(0.52, 0.65, 0.77)
+    local close = button(window, "X", 28, 26, function() window:Hide() end)
+    close:SetPoint("TOPRIGHT", -14, -12)
+    local settingsButton = button(window, "Settings", 76, 26, function()
+        showView(activeView == "settings" and "chat" or "settings")
+    end)
+    settingsButton:SetPoint("TOPRIGHT", close, "TOPLEFT", -8, 0)
+    window.settingsButton = settingsButton
+    local searchButton = button(window, "Search", 68, 26, function()
+        showView(activeView == "search" and "chat" or "search")
+    end)
+    searchButton:SetPoint("RIGHT", settingsButton, "LEFT", -8, 0)
+    window.searchButton = searchButton
+    conversationView = CreateFrame("Frame", nil, window)
+    conversationView:SetAllPoints()
+    window.chatBackground = surface(conversationView, "BACKGROUND")
+    window.chatBackground:SetPoint("TOPLEFT", CONTENT_LEFT - 12, -102)
+    window.chatBackground:SetPoint("BOTTOMRIGHT", 0, 0)
+    window.actionBackground = surface(conversationView, "BORDER")
+    window.actionBackground:SetPoint("TOPLEFT", CONTENT_LEFT - 12, -55)
+    window.actionBackground:SetPoint("TOPRIGHT", 0, -55)
+    window.actionBackground:SetHeight(47)
+    local actionDivider = conversationView:CreateTexture(nil, "ARTWORK")
+    actionDivider:SetPoint("TOPLEFT", CONTENT_LEFT - 12, -102)
+    actionDivider:SetPoint("TOPRIGHT", 0, -102)
+    actionDivider:SetHeight(1)
+    actionDivider:SetColorTexture(0.22, 0.31, 0.37, 0.65)
+    local copyButton = button(conversationView, "Copy", 66, 25, copyHistory)
+    copyButton:SetPoint("TOPLEFT", CONTENT_LEFT, -66)
+    local inviteButton = button(conversationView, "Invite", 66, 25, function()
+        local c = current and db.conversations[current]
+        if not c then return end
+        if c.kind == "bnet" then NS.InviteBNet(c); return end
+        if C_PartyInfo and C_PartyInfo.InviteUnit then
+            C_PartyInfo.InviteUnit(c.name)
+        elseif InviteUnit then
+            InviteUnit(c.name)
+        end
+    end)
+    window.inviteButton = inviteButton
+    inviteButton:SetPoint("LEFT", copyButton, "RIGHT", 5, 0)
+    actionMenu = CreateFrame("Frame", nil, conversationView)
+    actionMenu:SetSize(180, 88)
+    actionMenu:SetFrameLevel(conversationView:GetFrameLevel() + 25)
+    actionMenu:EnableMouse(true)
+    actionMenu.bg = fill(actionMenu, 0.07, 0.08, 0.11, 1, true)
+    local more = button(conversationView, "More ...", 76, 28, function()
+        actionMenu:SetShown(not actionMenu:IsShown())
+        palette:Hide()
+    end)
+    more:SetPoint("TOPRIGHT", -18, -64)
+    actionMenu:SetPoint("TOPRIGHT", more, "BOTTOMRIGHT", 0, -5)
+    local ignoreButton = button(actionMenu, "Ignore player...", 160, 30, function()
+        actionMenu:Hide()
+        local c = current and db.conversations[current]
+        if c and c.kind ~= "bnet" then StaticPopup_Show("FOREVERWHISPER_IGNORE", c.name, nil, c.name) end
+    end)
+    local clearButton = button(actionMenu, "Clear history...", 160, 30, function()
+        actionMenu:Hide()
+        local c = current and db.conversations[current]
+        if c then StaticPopup_Show("FOREVERWHISPER_CLEAR", c.name, nil, current) end
+    end)
+    local pinButton = button(conversationView, "Pin", 66, 25, function()
+        if current then togglePin(current) end
+    end)
+    pinButton:SetPoint("LEFT", inviteButton, "RIGHT", 5, 0)
+    ignoreButton:SetPoint("TOPLEFT", 10, -10)
+    clearButton:SetPoint("TOPLEFT", 10, -48)
+    actionMenu:Hide()
+    window.ignoreButton = ignoreButton
+    window.clearButton = clearButton
+    window.pinButton = pinButton
+
+    sidebar = CreateFrame("Frame", nil, window)
+    sidebar:SetPoint("TOPLEFT", 0, -55)
+    sidebar:SetPoint("BOTTOMLEFT", 0, 0)
+    sidebar:SetWidth(CONTENT_LEFT - 12)
+    window.sideBackground = fill(sidebar, 0.04, 0.05, 0.08, db.opacity, true)
+    local sideDivider = sidebar:CreateTexture(nil, "BORDER")
+    sideDivider:SetPoint("TOPRIGHT", -1, 0)
+    sideDivider:SetPoint("BOTTOMRIGHT", -1, 0)
+    sideDivider:SetWidth(1)
+    sideDivider:SetColorTexture(0.23, 0.34, 0.40, 0.65)
+    local filter = CreateFrame("EditBox", nil, sidebar)
+    filter:SetPoint("TOPLEFT", 12, -12)
+    filter:SetPoint("TOPRIGHT", -12, -12)
+    filter:SetHeight(30)
+    filter:SetAutoFocus(false)
+    filter:SetTextInsets(10, 10, 0, 0)
+    filter:SetFont(fonts[db.font][2], 12, "")
+    window.filterBackground = fill(filter, 0.1, 0.14, 0.19, 1, true)
+    local filterHint = label(filter, "Filter conversations...", 12, "LEFT", 10, 0)
+    filterHint:SetTextColor(0.53, 0.64, 0.74)
+    filter:SetScript("OnTextChanged", function(self)
+        contactQuery = string.lower(self:GetText())
+        filterHint:SetShown(contactQuery == "")
+        contactOffset = 0
+        refreshContacts()
+    end)
+    filter:SetScript("OnEscapePressed", function(self) self:SetText(""); self:ClearFocus() end)
+    window.contactFilter = filter
+    window.contactCount = label(sidebar, "CHATS", 10, "TOPLEFT", 14, -57)
+    window.contactCount:SetTextColor(0.53, 0.65, 0.77)
+    newChat = CreateFrame("Frame", nil, sidebar)
+    newChat:SetSize(204, 122)
+    newChat:SetPoint("TOPLEFT", 8, -78)
+    newChat:SetFrameLevel(sidebar:GetFrameLevel() + 24)
+    newChat:EnableMouse(true)
+    newChat.bg = fill(newChat, 0.07, 0.08, 0.11, 1, true)
+    label(newChat, "NEW CONVERSATION", 11, "TOPLEFT", 12, -12)
+    local player = CreateFrame("EditBox", nil, newChat)
+    player:SetPoint("TOPLEFT", 12, -36)
+    player:SetSize(180, 28)
+    player:SetAutoFocus(false)
+    player:SetMaxLetters(80)
+    player:SetTextInsets(8, 8, 0, 0)
+    player:SetFont(fonts[db.font][2], 13, "")
+    fill(player, 0.14, 0.18, 0.23, 1)
+    local nameHint = label(player, "Name-Realm or BattleTag", 11, "LEFT", 8, 0)
+    nameHint:SetTextColor(0.58, 0.68, 0.78)
+    player:SetScript("OnTextChanged", function(self) nameHint:SetShown(self:GetText() == "") end)
+    local function openChat()
+        local name = player:GetText():match("^%s*(.-)%s*$")
+        if name == "" or inCombat() then return end
+        local key = conversation(name)
+        if not key then
+            DEFAULT_CHAT_FRAME:AddMessage("Forever Whisper: Battle.net friend unavailable. Start a whisper from WoW's friends list first.")
+            return
+        end
+        filter:SetText("")
+        selectConversation(key)
+        showView("chat")
+        newChat:Hide()
+        player:ClearFocus()
+        input:SetFocus()
+    end
+    player:SetScript("OnEnterPressed", openChat)
+    player:SetScript("OnEscapePressed", function(self) self:ClearFocus(); newChat:Hide() end)
+    local open = button(newChat, "Open chat", 180, 30, openChat)
+    open:SetPoint("BOTTOMLEFT", 12, 12)
+    newChat:SetScript("OnHide", function() player:ClearFocus() end)
+    local add = button(sidebar, "+ New", 62, 26, function()
+        newChat:SetShown(not newChat:IsShown())
+        if newChat:IsShown() then player:SetText(""); player:SetFocus() end
+    end)
+    add:SetPoint("TOPRIGHT", -12, -48)
+    newChat:Hide()
+    sidebar:EnableMouseWheel(true)
+    sidebar:SetScript("OnMouseWheel", function(_, delta)
+        contactOffset = contactOffset - delta
+        refreshContacts()
+    end)
+    for i = 1, 14 do
+        local b = CreateFrame("Button", nil, sidebar)
+        b:SetPoint("TOPLEFT", 8, -82 - (i - 1) * 58)
+        b:SetPoint("TOPRIGHT", -8, -82 - (i - 1) * 58)
+        b:SetHeight(54)
+        b.highlight = fill(b, 0.13, 0.27, 0.34, 0.95, true)
+        b.rail = b:CreateTexture(nil, "BORDER")
+        b.rail:SetPoint("TOPLEFT", 0, -8)
+        b.rail:SetPoint("BOTTOMLEFT", 0, 8)
+        b.rail:SetWidth(2)
+        b.hover = surface(b, "ARTWORK")
+        b.hover:SetAllPoints()
+        b.hover:SetColorTexture(0.30, 0.50, 0.59, 0.16)
+        b.hover:Hide()
+        b:SetScript("OnEnter", function(self) self.hover:Show() end)
+        b:SetScript("OnLeave", function(self) self.hover:Hide() end)
+        b:EnableMouseWheel(true)
+        b:SetScript("OnMouseWheel", function(_, delta)
+            contactOffset = contactOffset - delta
+            refreshContacts()
+        end)
+        local avatar = CreateFrame("Frame", nil, b)
+        avatar:SetPoint("LEFT", 10, 0)
+        avatar:SetSize(30, 34)
+        b.avatarBackground = fill(avatar, 0.12, 0.19, 0.25, 1, true)
+        b.initial = label(avatar, "?", 16, "CENTER", 0, 0)
+        b.name = b:CreateFontString(nil, "OVERLAY")
+        b.name:SetPoint("TOPLEFT", 49, -5)
+        b.name:SetPoint("TOPRIGHT", -28, -5)
+        b.name:SetJustifyH("LEFT")
+        b.name:SetWordWrap(false)
+        b.name:SetFont(fonts[db.font][2], math.min(db.fontSize, 15), "")
+        b.preview = b:CreateFontString(nil, "OVERLAY")
+        b.detail = label(b, "", 10, "TOPLEFT", 49, -23)
+        b.detail:SetPoint("TOPRIGHT", -9, -23)
+        b.detail:SetWordWrap(false)
+        b.detail:SetTextColor(0.57, 0.68, 0.74)
+        b.statusDot = b:CreateTexture(nil, "OVERLAY")
+        b.statusDot:SetPoint("BOTTOMRIGHT", avatar, "BOTTOMRIGHT", 2, -2)
+        b.statusDot:SetSize(12, 12)
+        b.preview:SetPoint("TOPLEFT", 49, -37)
+        b.preview:SetPoint("TOPRIGHT", -9, -37)
+        b.preview:SetJustifyH("LEFT")
+        b.preview:SetWordWrap(false)
+        b.preview:SetFont(fonts[db.font][2], 11, "")
+        b.preview:SetTextColor(0.58, 0.68, 0.77)
+        b.unreadBadge = CreateFrame("Frame", nil, b)
+        b.unreadBadge:SetSize(22, 18)
+        b.unreadBadge:SetPoint("TOPRIGHT", -5, -7)
+        b.unreadBackground = fill(b.unreadBadge, 0.2, 0.4, 0.6, 1, true)
+        b.unread = label(b.unreadBadge, "", 10, "CENTER", 0, 0)
+        b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        b:SetScript("OnClick", function(self, mouseButton)
+            if mouseButton == "RightButton" then openContactMenu(self.key, self)
+            else selectConversation(self.key); newChat:Hide() end
+        end)
+        contactButtons[i] = b
+    end
+
+    window.artAmbient = conversationView:CreateTexture(nil, "BORDER")
+    window.artAmbient:SetPoint("TOPLEFT", CONTENT_LEFT, -118)
+    window.artAmbient:SetPoint("BOTTOMRIGHT", -23, 80)
+    window.artAmbient:SetTexCoord(0, 1, 0.20, 1)
+    window.artCorner = conversationView:CreateTexture(nil, "ARTWORK")
+    window.artCorner:SetPoint("TOPRIGHT", -8, -105)
+    window.artCorner:SetSize(300, 300)
+    window.artSide = sidebar:CreateTexture(nil, "ARTWORK")
+    window.artSide:SetPoint("BOTTOMLEFT", 0, 0)
+    window.artSide:SetSize(208, 208)
+    window.artSide:SetTexCoord(1, 0, 1, 0)
+
+    transcript = NS.CreateTranscript(conversationView, currentStyle)
+    window.transcript = transcript
+    transcript:SetPoint("TOPLEFT", CONTENT_LEFT, -118)
+    transcript:SetPoint("BOTTOMRIGHT", -23, 80)
+    transcript:SetFont(fonts[db.font][2], db.fontSize, "")
+    transcript:EnableMouseWheel(true)
+    transcript:SetScript("OnMouseWheel", function(self, delta)
+        if delta > 0 then self:ScrollUp() else self:ScrollDown() end
+        if window.latest and self.GetScrollOffset then window.latest:SetShown(self:GetScrollOffset() > 0) end
+    end)
+
+    transcript:EnableMouse(true)
+    if transcript.SetHyperlinksEnabled then transcript:SetHyperlinksEnabled(true) end
+    transcript.onHyperlinkClick = function(self, link, text, mouseButton)
+        local key = link:match("^fwplayer:(.+)$")
+        if key then
+            if mouseButton == "RightButton" then openContactMenu(key, self) end
+        else
+            local map, px, py = link:match("^fwmap:(%d+):(%d+):(%d+)$")
+            if map then openMapPin(tonumber(map), tonumber(px) / 10000, tonumber(py) / 10000)
+            elseif SetItemRef then SetItemRef(link, text, mouseButton) end
+        end
+    end
+    transcript:SetScript("OnMouseDown", function()
+        if contactMenu then contactMenu:Hide() end
+        actionMenu:Hide()
+    end)
+    window.empty = label(conversationView, "A little closer to your people.\n\nChoose a chat on the left, or click + New.", 15, "CENTER", 95, 12)
+    window.empty:SetJustifyH("CENTER")
+    window.empty:SetTextColor(0.57, 0.69, 0.79)
+    window.latest = button(conversationView, "Latest messages", 132, 26, function()
+        transcript:ScrollToBottom()
+        searchJump = nil
+        window.latest:Hide()
+    end)
+    window.latest:SetPoint("BOTTOMRIGHT", -25, 76)
+    window.latest:Hide()
+    local compose = CreateFrame("Frame", nil, conversationView)
+    compose:SetPoint("BOTTOMLEFT", CONTENT_LEFT, 20)
+    compose:SetPoint("BOTTOMRIGHT", -139, 20)
+    compose:SetHeight(44)
+    window.composeBackground = fill(compose, 0.12, 0.17, 0.23, 1, true)
+    local replyBar = CreateFrame("Frame", nil, conversationView)
+    window.replyBar = replyBar
+    replyBar:SetPoint("BOTTOMLEFT", CONTENT_LEFT, 70)
+    replyBar:SetPoint("BOTTOMRIGHT", -25, 70)
+    replyBar:SetHeight(44)
+    fill(replyBar, 0.08, 0.15, 0.17, 0.97)
+    replyBar.title = label(replyBar, "", 10, "TOPLEFT", 10, -5)
+    replyBar.quote = label(replyBar, "", 11, "BOTTOMLEFT", 10, 7)
+    replyBar.quote:SetPoint("BOTTOMRIGHT", -35, 7)
+    replyBar.quote:SetWordWrap(false)
+    replyBar.title:SetTextColor(0.5, 0.85, 0.82)
+    local cancelReply = button(replyBar, "X", 24, 24, function()
+        replyDrafts[current] = nil
+        updateReplyPreview()
+    end)
+    cancelReply:SetPoint("RIGHT", -6, 0)
+    updateReplyPreview = function()
+        local reply = current and replyDrafts[current]
+        replyBar:SetShown(reply ~= nil)
+        if reply then
+            replyBar.title:SetText("Replying to " .. reply.who)
+            replyBar.quote:SetText(reply.quote)
+        end
+        transcript:ClearAllPoints()
+        transcript:SetPoint("TOPLEFT", CONTENT_LEFT, -118)
+        transcript:SetPoint("BOTTOMRIGHT", -23, reply and 130 or 80)
+        window.latest:ClearAllPoints()
+        window.latest:SetPoint("BOTTOMRIGHT", -25, reply and 126 or 76)
+        if input and input:GetScript("OnTextChanged") then input:GetScript("OnTextChanged")(input, false) end
+    end
+    replyBar:Hide()
+    transcript.onReply = function(_, index)
+        local c = current and db.conversations[current]
+        local message = c and c.messages[index]
+        if not message or inCombat() then return end
+        local who = message.outgoing and ((UnitName and UnitName("player")) or "You") or c.name
+        local body = NS.DecodeReply(message.text)
+        replyDrafts[current] = { who = NS.Excerpt(who, 40), quote = NS.Excerpt(body) }
+        updateReplyPreview()
+        if input then input:SetFocus() end
+    end
+    input = CreateFrame("EditBox", nil, compose)
+    input:SetPoint("TOPLEFT", 12, 0)
+    input:SetPoint("BOTTOMRIGHT", -10, 0)
+    input:SetAutoFocus(false)
+    input:SetFont(fonts[db.font][2], db.fontSize + 1, "")
+    input:SetTextColor(0.95, 0.97, 1)
+    input.hint = label(compose, "Write a message...", db.fontSize + 1, "LEFT", 12, 0)
+    input.hint:SetTextColor(0.54, 0.65, 0.72)
+    window.composeLine = compose:CreateTexture(nil, "BORDER")
+    window.composeLine:SetPoint("BOTTOMLEFT")
+    window.composeLine:SetPoint("BOTTOMRIGHT")
+    window.composeLine:SetHeight(2)
+    window.composeLine:Hide()
+    input:SetScript("OnEditFocusGained", function() window.composeLine:Show() end)
+    input:SetScript("OnEditFocusLost", function()
+        window.composeLine:Hide()
+        if social then social:Stop() end
+    end)
+    window.byteCount = label(conversationView, "", 10, "BOTTOMRIGHT", -26, 6)
+    window.byteCount:SetTextColor(0.5, 0.62, 0.72)
+    label(conversationView, "ENTER  Send    /    ESC  Release keyboard", 10, "BOTTOMLEFT", CONTENT_LEFT, 6)
+        :SetTextColor(0.5, 0.62, 0.72)
+    input:SetScript("OnTextChanged", function(self, userInput)
+        local text = self:GetText()
+        local bytes = #replyPayload(text)
+        self.hint:SetShown(text == "")
+        if current then drafts[current] = text end
+        window.byteCount:SetText(bytes > 0 and (bytes .. " / 255") or "")
+        window.byteCount:SetTextColor(bytes > 255 and 1 or 0.5, bytes > 255 and 0.4 or 0.62, bytes > 255 and 0.4 or 0.72)
+        if window.sendButton then
+            window.sendButton:SetEnabled(current ~= nil and text:match("%S") ~= nil and bytes <= 255)
+        end
+        if social and current and db.conversations[current].kind ~= "bnet" then
+            if userInput then social:Touch(db.conversations[current].name, text:match("%S") ~= nil)
+            elseif text == "" then social:Stop() end
+        end
+    end)
+    input:SetMaxLetters(250)
+    input:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    local function send()
+        local c = current and db.conversations[current]
+        if not c then return end
+        local message = input:GetText():match("^%s*(.-)%s*$")
+        if message == "" then return end
+        message = replyPayload(message)
+        if #message > 255 then
+            DEFAULT_CHAT_FRAME:AddMessage("|cffff8080Forever Whisper: message is too long.|r")
+            return
+        end
+        if c.kind == "bnet" then
+            local ok, reason = NS.SendBNet(c, message)
+            if not ok then DEFAULT_CHAT_FRAME:AddMessage("Forever Whisper: " .. reason); return end
+        else
+            SendChatMessage(message, "WHISPER", nil, c.name)
+        end
+        replyDrafts[current] = nil
+        input:SetText("")
+        updateReplyPreview()
+        input:SetFocus()
+    end
+    input:SetScript("OnEnterPressed", send)
+    local sendButton = button(conversationView, "Send", 62, 44, send)
+    sendButton:SetPoint("BOTTOMRIGHT", -25, 20)
+    window.sendButton = sendButton
+    local emoteButton = button(conversationView, "", 50, 44, function()
+        palette:SetShown(not palette:IsShown())
+        actionMenu:Hide()
+        if palette:IsShown() and refreshPalette then refreshPalette() end
+    end)
+    emoteButton:SetPoint("RIGHT", sendButton, "LEFT", -6, 0)
+    local emojiIcon = emoteButton:CreateTexture(nil, "OVERLAY")
+    emojiIcon:SetSize(25, 25)
+    emojiIcon:SetPoint("CENTER")
+    emojiIcon:SetTexture(emojiPaths.grin)
+    sendButton:SetEnabled(false)
+
+    palette = CreateFrame("Frame", nil, conversationView)
+    palette:SetSize(354, 340)
+    palette:SetPoint("BOTTOMRIGHT", emoteButton, "TOPRIGHT", 0, 7)
+    palette:SetFrameLevel(conversationView:GetFrameLevel() + 20)
+    palette:EnableMouse(true)
+    palette:SetClampedToScreen(true)
+    window.paletteBackground = fill(palette, 0.10, 0.15, 0.20, 1, true)
+    label(palette, "Emoji & reactions", 16, "TOPLEFT", 14, -13):SetTextColor(0.91, 0.95, 1)
+    local paletteClose = button(palette, "X", 26, 26, function() palette:Hide() end)
+    paletteClose:SetPoint("TOPRIGHT", -10, -9)
+    local emojiSearch = CreateFrame("EditBox", nil, palette)
+    emojiSearch:SetPoint("TOPLEFT", 14, -44)
+    emojiSearch:SetPoint("TOPRIGHT", -14, -44)
+    emojiSearch:SetHeight(30)
+    emojiSearch:SetAutoFocus(false)
+    emojiSearch:SetMaxLetters(40)
+    emojiSearch:SetTextInsets(10, 10, 0, 0)
+    emojiSearch:SetFont(fonts[db.font][2], 12, "")
+    fill(emojiSearch, 0.13, 0.17, 0.23, 1)
+    local emojiHint = label(emojiSearch, "Search: happy, skull, gg...", 12, "LEFT", 10, 0)
+    emojiHint:SetTextColor(0.57, 0.67, 0.77)
+    local category, page, matches, slots, tabs = "All", 0, {}, {}, {}
+    local paletteStatus = label(palette, "", 10, "BOTTOMLEFT", 14, 18)
+    paletteStatus:SetTextColor(0.65, 0.76, 0.85)
+    refreshPalette = function()
+        local query = string.lower(emojiSearch:GetText()):match("^%s*(.-)%s*$")
+        matches = {}
+        local candidates = emoji
+        if category == "Recent" and query == "" then
+            candidates = {}
+            for _, code in ipairs(db.recentEmoji) do
+                if emojiByCode[code] then candidates[#candidates + 1] = emojiByCode[code] end
+            end
+        end
+        for _, entry in ipairs(candidates) do
+            -- A search spans all categories, so there are no hidden matches.
+            if query ~= "" or category == "All" or category == "Recent" or entry[4] == category then
+                local searchable = string.lower(entry[1] .. " " .. entry[3] .. " " .. entry[4])
+                if query == "" or string.find(searchable, query, 1, true) then matches[#matches + 1] = entry end
+            end
+        end
+        page = clamp(page, 0, math.max(0, math.ceil(#matches / 28) - 1))
+        for i, slot in ipairs(slots) do
+            local entry = matches[page * 28 + i]
+            slot.entry = entry
+            slot:SetShown(entry ~= nil)
+            if entry then slot.art:SetTexture(emojiPaths[entry[1]]) end
+        end
+        for name, tab in pairs(tabs) do
+            tab.marker:SetShown(query == "" and name == category)
+        end
+        paletteStatus:SetText(#matches == 0 and "No matches" or
+            (#matches .. " emojis  /  " .. (page + 1) .. " of " .. math.max(1, math.ceil(#matches / 28))))
+    end
+    for i, name in ipairs({ "All", "Faces", "Hands", "Hearts", "Game", "Memes", "Recent" }) do
+        local tab = button(palette, name, 46, 27, function()
+            category, page = name, 0
+            emojiSearch:SetText("")
+            refreshPalette()
+        end)
+        tab:SetPoint("TOPLEFT", 13 + (i - 1) * 47, -84)
+        tab.fontSize = 10
+        tab.fontText:SetFont(fonts[db.font][2], 10, "")
+        tab.marker = tab:CreateTexture(nil, "ARTWORK")
+        tab.marker:SetPoint("BOTTOMLEFT")
+        tab.marker:SetPoint("BOTTOMRIGHT")
+        tab.marker:SetHeight(2)
+        tab.marker:SetColorTexture(0.62, 0.82, 1, 1)
+        tabs[name] = tab
+    end
+    for i = 1, 28 do
+        local b = CreateFrame("Button", nil, palette)
+        b:SetSize(44, 42)
+        b:SetPoint("TOPLEFT", 14 + ((i - 1) % 7) * 46, -119 - math.floor((i - 1) / 7) * 44)
+        b.art = b:CreateTexture(nil, "ARTWORK")
+        b.art:SetSize(30, 30)
+        b.art:SetPoint("CENTER")
+        local hover = b:CreateTexture(nil, "BACKGROUND")
+        hover:SetAllPoints()
+        hover:SetColorTexture(1, 1, 1, 0.12)
+        hover:Hide()
+        b:SetScript("OnEnter", function(self)
+            if not self.entry then return end
+            hover:Show()
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(self.entry[3])
+            GameTooltip:AddLine(":" .. self.entry[1] .. ":", 0.60, 0.80, 1)
+            GameTooltip:AddLine("Shift-click to keep the picker open", 0.65, 0.72, 0.80)
+            GameTooltip:Show()
+        end)
+        b:SetScript("OnLeave", function() hover:Hide(); GameTooltip:Hide() end)
+        b:SetScript("OnClick", function(self)
+            if not self.entry or not current then return end
+            local code = self.entry[1]
+            input:Insert(":" .. code .. ": ")
+            for j = #db.recentEmoji, 1, -1 do
+                if db.recentEmoji[j] == code then table.remove(db.recentEmoji, j) end
+            end
+            table.insert(db.recentEmoji, 1, code)
+            while #db.recentEmoji > 16 do table.remove(db.recentEmoji) end
+            GameTooltip:Hide()
+            if not IsShiftKeyDown() then palette:Hide() end
+            input:SetFocus()
+        end)
+        slots[i] = b
+    end
+    local older = button(palette, "<", 28, 26, function() page = page - 1; refreshPalette() end)
+    older:SetPoint("BOTTOMRIGHT", -48, 10)
+    local newer = button(palette, ">", 28, 26, function() page = page + 1; refreshPalette() end)
+    newer:SetPoint("BOTTOMRIGHT", -14, 10)
+    palette:EnableMouseWheel(true)
+    palette:SetScript("OnMouseWheel", function(_, delta) page = page - delta; refreshPalette() end)
+    palette:SetScript("OnHide", function() emojiSearch:ClearFocus(); GameTooltip:Hide() end)
+    emojiSearch:SetScript("OnTextChanged", function(self)
+        emojiHint:SetShown(self:GetText() == "")
+        page = 0
+        if palette:IsShown() then refreshPalette() end
+    end)
+    emojiSearch:SetScript("OnEscapePressed", function(self) self:ClearFocus(); palette:Hide() end)
+
+    searchView = CreateFrame("Frame", nil, window)
+    searchView:SetPoint("TOPLEFT", window, "TOPLEFT", 0, -54)
+    searchView:SetPoint("BOTTOMRIGHT", window, "BOTTOMRIGHT", 0, 0)
+    searchView:EnableMouse(true)
+    window.searchBackground = fill(searchView, 0.075, 0.105, 0.145, 0.99)
+    local searchField = CreateFrame("Frame", nil, searchView)
+    searchField:SetPoint("TOPLEFT", 25, -23)
+    searchField:SetPoint("TOPRIGHT", -113, -23)
+    searchField:SetHeight(36)
+    window.searchFieldBackground = fill(searchField, 0.12, 0.17, 0.23, 1, true)
+    searchInput = CreateFrame("EditBox", nil, searchField)
+    searchInput:SetPoint("TOPLEFT", 11, 0)
+    searchInput:SetPoint("BOTTOMRIGHT", -8, 0)
+    searchInput:SetAutoFocus(false)
+    searchInput:SetFont("Fonts\\ARIALN.TTF", 14, "")
+    searchInput:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    searchInput:SetScript("OnEnterPressed", performSearch)
+    local findButton = button(searchView, "Find", 76, 36, performSearch)
+    findButton:SetPoint("TOPRIGHT", -25, -23)
+    searchStatus = label(searchView, "Search people or saved messages. Press Enter to find matches.",
+        12, "TOPLEFT", 27, -72)
+    searchStatus:SetTextColor(0.60, 0.74, 0.83)
+    for i = 1, 6 do
+        local b = CreateFrame("Button", nil, searchView)
+        b:SetPoint("TOPLEFT", 25, -101 - (i - 1) * 44)
+        b:SetPoint("TOPRIGHT", -25, -101 - (i - 1) * 44)
+        b:SetHeight(40)
+        b.bg = fill(b, 0.12, 0.17, 0.22, 1, true)
+        local hover = b:CreateTexture(nil, "ARTWORK")
+        hover:SetAllPoints()
+        hover:SetColorTexture(1, 1, 1, 0.07)
+        hover:Hide()
+        b:SetScript("OnEnter", function() hover:Show() end)
+        b:SetScript("OnLeave", function() hover:Hide() end)
+        b:EnableMouseWheel(true)
+        b:SetScript("OnMouseWheel", function(_, delta)
+            searchOffset = searchOffset - delta * 3
+            refreshSearchResults()
+        end)
+        b.title = b:CreateFontString(nil, "OVERLAY")
+        b.title:SetFont("Fonts\\ARIALN.TTF", 13, "")
+        b.title:SetPoint("TOPLEFT", 10, -4)
+        b.title:SetPoint("TOPRIGHT", -10, -4)
+        b.title:SetJustifyH("LEFT")
+        b.title:SetWordWrap(false)
+        b.preview = b:CreateFontString(nil, "OVERLAY")
+        b.preview:SetFont("Fonts\\ARIALN.TTF", 12, "")
+        b.preview:SetTextColor(0.73, 0.81, 0.86)
+        b.preview:SetPoint("BOTTOMLEFT", 10, 5)
+        b.preview:SetPoint("BOTTOMRIGHT", -10, 5)
+        b.preview:SetJustifyH("LEFT")
+        b.preview:SetWordWrap(false)
+        b:SetScript("OnClick", function(self)
+            local result = self.result
+            if not result or not db.conversations[result.key] then return end
+            selectConversation(result.key)
+            if result.kind == "person" then
+                showView("chat")
+                return
+            end
+            local index = result.index
+            local messages = db.conversations[result.key].messages
+            if not messages[index] or messages[index].text ~= result.text
+                or messages[index].at ~= result.at then
+                index = nil
+                for j, item in ipairs(messages) do
+                    if item.text == result.text and item.at == result.at then
+                        index = j
+                        break
+                    end
+                end
+            end
+            if index then searchJump = { key = result.key, index = index } end
+            showView("chat")
+        end)
+        searchButtons[i] = b
+    end
+    searchView:EnableMouseWheel(true)
+    searchView:SetScript("OnMouseWheel", function(_, delta)
+        searchOffset = searchOffset - delta * 3
+        refreshSearchResults()
+    end)
+    local previous = button(searchView, "Previous", 82, 24, function()
+        searchOffset = searchOffset - #searchButtons
+        refreshSearchResults()
+    end)
+    previous:SetPoint("BOTTOMLEFT", 25, 15)
+    local nextPage = button(searchView, "Next", 62, 24, function()
+        searchOffset = searchOffset + #searchButtons
+        refreshSearchResults()
+    end)
+    nextPage:SetPoint("LEFT", previous, "RIGHT", 7, 0)
+    searchView.page = label(searchView, "", 12, "BOTTOMRIGHT", -26, 20)
+    searchView.page:SetTextColor(0.65, 0.76, 0.84)
+    searchView:Hide()
+    local resizing = false
+    local function finishResize()
+        if not resizing then return end
+        resizing = false
+        window:StopMovingOrSizing()
+        db.width = clamp(math.floor(window:GetWidth() / 10 + 0.5) * 10, 700, 1200)
+        db.height = clamp(math.floor(window:GetHeight() / 10 + 0.5) * 10, 480, 850)
+        window:SetSize(db.width, db.height)
+        if settings and settings.widthSlider then
+            settings.widthSlider:SetValue(db.width)
+            settings.heightSlider:SetValue(db.height)
+        end
+        refreshContacts()
+        savePosition()
+    end
+    local resize = CreateFrame("Button", nil, window)
+    resize:SetSize(20, 20)
+    resize:SetPoint("BOTTOMRIGHT", -2, 2)
+    resize:SetFrameLevel(window:GetFrameLevel() + 30)
+    resize:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+    resize:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+    resize:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+    resize:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine("Drag to resize", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    resize:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    resize:SetScript("OnMouseDown", function(_, mouseButton)
+        if mouseButton == "LeftButton" and not inCombat() then
+            resizing = true
+            window:StartSizing("BOTTOMRIGHT")
+        end
+    end)
+    resize:SetScript("OnMouseUp", finishResize)
+    palette:Hide()
+    window:SetScript("OnHide", function()
+        finishResize()
+        palette:Hide()
+        actionMenu:Hide()
+        newChat:Hide()
+        if window.contactFilter then window.contactFilter:ClearFocus() end
+        if input then input:ClearFocus() end
+        if searchInput then searchInput:ClearFocus() end
+        if contactMenu then contactMenu:Hide() end
+        if customEditor then customEditor:Hide() end
+        if settings and settings.artPreview then settings.artPreview:Hide() end
+    end)
+    applyTheme()
+    refreshContacts()
+    refreshTranscript()
+    window:Hide()
+end
+
+local function makeSettings()
+    if settings then return end
+    settings = CreateFrame("Frame", "ForeverWhisperSettings", window)
+    settings:SetPoint("TOPLEFT", window, "TOPLEFT", 0, -54)
+    settings:SetPoint("BOTTOMRIGHT", window, "BOTTOMRIGHT", 0, 0)
+    settings:EnableMouse(true)
+    settings.sliderThumbs, settings.checkMarkers = {}, {}
+    settings.background = fill(settings, 0.075, 0.105, 0.145, 0.99)
+    label(settings, "LOOK & FEEL", 11, "TOPLEFT", 26, -18):SetTextColor(0.60, 0.77, 0.86)
+    label(settings, "Drag the bottom-right corner to resize", 11, "TOPRIGHT", -26, -18)
+        :SetTextColor(0.55, 0.68, 0.76)
+    local left = CreateFrame("Frame", nil, settings)
+    left:SetPoint("TOPLEFT", 26, -42)
+    left:SetPoint("TOPRIGHT", settings, "TOP", -9, -42)
+    left:SetHeight(170)
+    local right = CreateFrame("Frame", nil, settings)
+    right:SetPoint("TOPLEFT", settings, "TOP", 9, -42)
+    right:SetPoint("TOPRIGHT", -26, -42)
+    right:SetHeight(170)
+    local function slider(parent, rowIndex, title, field, low, high, step, apply)
+        local row = CreateFrame("Frame", nil, parent)
+        row:SetPoint("TOPLEFT", 0, -(rowIndex - 1) * 55)
+        row:SetPoint("TOPRIGHT", 0, -(rowIndex - 1) * 55)
+        row:SetHeight(47)
+        label(row, title, 13, "TOPLEFT", 0, 0)
+        local value = label(row, "", 13, "TOPRIGHT", -2, 0)
+        value:SetJustifyH("RIGHT")
+        local s = CreateFrame("Slider", nil, row)
+        s:SetPoint("BOTTOMLEFT", 7, 4)
+        s:SetPoint("BOTTOMRIGHT", -7, 4)
+        s:SetHeight(16)
+        s:SetOrientation("HORIZONTAL")
+        local rail = s:CreateTexture(nil, "BACKGROUND")
+        rail:SetPoint("LEFT")
+        rail:SetPoint("RIGHT")
+        rail:SetHeight(3)
+        rail:SetColorTexture(0.23, 0.29, 0.36, 1)
+        local thumb = s:CreateTexture(nil, "OVERLAY")
+        thumb:SetSize(10, 16)
+        thumb:SetColorTexture(0.6, 0.8, 1, 1)
+        s:SetThumbTexture(thumb)
+        settings.sliderThumbs[#settings.sliderThumbs + 1] = thumb
+        s:SetMinMaxValues(low, high)
+        s:SetValueStep(step)
+        s:SetObeyStepOnDrag(true)
+        s:SetValue(db[field])
+        local function formatValue(v)
+            if field == "opacity" or field == "artBrightness" then return math.floor(v * 100 + 0.5) .. "%" end
+            return step < 1 and string.format("%.2f", v) or tostring(v)
+        end
+        s:SetScript("OnValueChanged", function(_, v)
+            v = math.floor(v / step + 0.5) * step
+            db[field] = v
+            value:SetText(formatValue(v))
+            apply()
+        end)
+        value:SetText(formatValue(db[field]))
+        return s
+    end
+    settings.widthSlider = slider(left, 1, "Width", "width", 700, 1200, 10,
+        function() window:SetWidth(db.width) end)
+    settings.heightSlider = slider(left, 2, "Height", "height", 480, 850, 10, function()
+        window:SetHeight(db.height)
+        refreshContacts()
+    end)
+    slider(left, 3, "Window scale", "scale", 0.7, 1.4, 0.05,
+        function() window:SetScale(db.scale) end)
+    slider(right, 1, "Text size", "fontSize", 10, 20, 1,
+        function() applyFont(); refreshTranscript() end)
+    slider(right, 2, "Opacity", "opacity", 0.2, 1, 0.05, applyTheme)
+    slider(right, 3, "History per person", "historyLimit", 20, 200, 10, function()
+        for _, c in pairs(db.conversations) do
+            while #c.messages > db.historyLimit do table.remove(c.messages, 1) end
+        end
+        refreshTranscript()
+    end)
+    label(settings, "CHOOSE A STYLE", 11, "TOPLEFT", 26, -211)
+        :SetTextColor(0.60, 0.77, 0.86)
+    settings.selectorBackgrounds = {}
+    local function selector(parent, field, choices, title, apply)
+        local box = CreateFrame("Frame", nil, parent)
+        box:SetPoint("TOPLEFT")
+        box:SetPoint("TOPRIGHT")
+        box:SetHeight(31)
+        settings.selectorBackgrounds[#settings.selectorBackgrounds + 1] = fill(box, 0.12, 0.18, 0.23, 1)
+        local value = label(box, "", 13, "CENTER", 0, 0)
+        value:SetWidth(185)
+        value:SetJustifyH("CENTER")
+        local function change(delta)
+            db[field] = (db[field] - 1 + delta + #choices) % #choices + 1
+            value:SetText(title .. ": " .. choices[db[field]][1])
+            apply()
+        end
+        local previous = button(box, "<", 28, 27, function() change(-1) end)
+        previous:SetPoint("LEFT", 2, 0)
+        local nextChoice = button(box, ">", 28, 27, function() change(1) end)
+        nextChoice:SetPoint("RIGHT", -2, 0)
+        value:SetText(title .. ": " .. choices[db[field]][1])
+        return function(delta) change(delta) end
+    end
+    local fontChoice = CreateFrame("Frame", nil, settings)
+    fontChoice:SetPoint("TOPLEFT", 26, -233)
+    fontChoice:SetPoint("TOPRIGHT", settings, "TOP", -9, -233)
+    fontChoice:SetHeight(31)
+    selector(fontChoice, "font", fonts, "Font", function()
+        applyFont()
+        refreshTranscript()
+    end)
+    local themeChoice = CreateFrame("Frame", nil, settings)
+    themeChoice:SetPoint("TOPLEFT", settings, "TOP", 9, -233)
+    themeChoice:SetPoint("TOPRIGHT", -26, -233)
+    themeChoice:SetHeight(31)
+    local changeTheme = selector(themeChoice, "theme", themes, "Theme", applyTheme)
+    label(settings, "BEHAVIOR", 11, "TOPLEFT", 26, -286)
+        :SetTextColor(0.60, 0.77, 0.86)
+    local function check(parent, rowIndex, text, field, apply)
+        local row = CreateFrame("Frame", nil, parent)
+        row:SetPoint("TOPLEFT", 0, -(rowIndex - 1) * 25)
+        row:SetPoint("TOPRIGHT", 0, -(rowIndex - 1) * 25)
+        row:SetHeight(24)
+        local b = CreateFrame("CheckButton", nil, row)
+        b:SetAllPoints()
+        local box = b:CreateTexture(nil, "BACKGROUND")
+        box:SetPoint("LEFT", 2, 0)
+        box:SetSize(20, 20)
+        box:SetColorTexture(0.18, 0.23, 0.29, 1)
+        local marker = b:CreateTexture(nil, "ARTWORK")
+        marker:SetPoint("LEFT", 7, 0)
+        marker:SetSize(10, 10)
+        marker:SetColorTexture(0.6, 0.8, 1, 1)
+        settings.checkMarkers[#settings.checkMarkers + 1] = marker
+        b:SetChecked(db[field])
+        marker:SetShown(db[field])
+        label(row, text, 13, "LEFT", 31, 0)
+        b:SetScript("OnClick", function(self)
+            db[field] = not not self:GetChecked()
+            marker:SetShown(db[field])
+            if apply then apply() end
+        end)
+    end
+    local leftChecks = CreateFrame("Frame", nil, settings)
+    leftChecks:SetPoint("TOPLEFT", 26, -308)
+    leftChecks:SetPoint("TOPRIGHT", settings, "TOP", -9, -308)
+    leftChecks:SetHeight(75)
+    local rightChecks = CreateFrame("Frame", nil, settings)
+    rightChecks:SetPoint("TOPLEFT", settings, "TOP", 9, -308)
+    rightChecks:SetPoint("TOPRIGHT", -26, -308)
+    rightChecks:SetHeight(61)
+    check(leftChecks, 1, "Show timestamps", "timestamps", refreshTranscript)
+    check(leftChecks, 2, "Play sound for whispers", "sound")
+    check(leftChecks, 3, "Combat message previews", "combatPreview", function()
+        if not db.combatPreview and combatPreview then combatPreview:Reset() end
+    end)
+    check(rightChecks, 1, "Also show whispers in WoW chat", "keepChat")
+    check(rightChecks, 2, "Show minimap button", "showMinimap", refreshMinimap)
+    check(rightChecks, 3, "Share typing indicators", "typing", function()
+        if social and not db.typing then social:Disable() end
+        refreshContacts()
+        refreshPresence()
+    end)
+    local preview = CreateFrame("Frame", nil, settings)
+    preview:SetPoint("TOPLEFT", 26, -388)
+    preview:SetPoint("TOPRIGHT", -26, -388)
+    preview:SetHeight(31)
+    settings.previewBackground = fill(preview, 0.10, 0.15, 0.20, 1, true)
+    settings.previewAccent = preview:CreateTexture(nil, "ARTWORK")
+    settings.previewAccent:SetPoint("TOPLEFT")
+    settings.previewAccent:SetPoint("BOTTOMLEFT")
+    settings.previewAccent:SetWidth(3)
+    settings.previewText = label(preview, "Aa  Hello there!  123", db.fontSize + 2, "LEFT", 15, 0)
+    local artworkChoice = button(preview, "Artwork: " .. (db.artwork and "On" or "Off"), 120, 27, function(self)
+        db.artwork = not db.artwork
+        self:SetText("Artwork: " .. (db.artwork and "On" or "Off"))
+        applyTheme()
+    end)
+    artworkChoice:SetPoint("RIGHT", -8, 0)
+    local artPreview = CreateFrame("Frame", "ForeverWhisperArtPreview", settings)
+    settings.artPreview = artPreview
+    artPreview:SetSize(344, 412)
+    artPreview:SetPoint("CENTER", window, "CENTER", 0, 0)
+    artPreview:SetFrameLevel(settings:GetFrameLevel() + 40)
+    artPreview:SetClampedToScreen(true)
+    artPreview:EnableMouse(true)
+    artPreview.bg = fill(artPreview, 0.1, 0.1, 0.15, 1)
+    label(artPreview, "ARTWORK PREVIEW", 11, "TOPLEFT", 18, -15)
+    local closeArt = button(artPreview, "X", 26, 24, function() artPreview:Hide() end)
+    closeArt:SetPoint("TOPRIGHT", -8, -8)
+    artPreview.themeName = label(artPreview, "", 16, "TOP", 0, -43)
+    local prevArt = button(artPreview, "<", 30, 26, function() changeTheme(-1) end)
+    prevArt:SetPoint("TOPLEFT", 22, -37)
+    local nextArt = button(artPreview, ">", 30, 26, function() changeTheme(1) end)
+    nextArt:SetPoint("TOPRIGHT", -22, -37)
+    artPreview.ambient = artPreview:CreateTexture(nil, "BORDER")
+    artPreview.ambient:SetPoint("TOP", 0, -72)
+    artPreview.ambient:SetSize(256, 256)
+    artPreview.ambient:SetTexCoord(0, 1, 0.20, 1)
+    artPreview.headerArt = artPreview:CreateTexture(nil, "BORDER")
+    artPreview.headerArt:SetPoint("TOP", 0, -32)
+    artPreview.headerArt:SetSize(170, 34)
+    artPreview.headerArt:SetTexCoord(0, 1, 0, 0.20)
+    artPreview.image = artPreview:CreateTexture(nil, "ARTWORK")
+    artPreview.image:SetPoint("TOP", 0, -72)
+    artPreview.image:SetSize(256, 256)
+    local brightnessRow = CreateFrame("Frame", nil, artPreview)
+    brightnessRow:SetPoint("TOPLEFT", 22, -337)
+    brightnessRow:SetPoint("TOPRIGHT", -22, -337)
+    brightnessRow:SetHeight(47)
+    artPreview.brightness = slider(brightnessRow, 1, "Artwork brightness", "artBrightness", 0.25, 1, 0.05, applyTheme)
+    artPreview.notice = label(artPreview, "", 10, "BOTTOM", 0, 10)
+    artPreview.notice:SetTextColor(0.65, 0.73, 0.81)
+    artPreview:Hide()
+    if UISpecialFrames then UISpecialFrames[#UISpecialFrames + 1] = "ForeverWhisperArtPreview" end
+    local previewArtButton = button(preview, "Preview art", 108, 27, function()
+        artPreview:Show()
+        applyTheme()
+    end)
+    previewArtButton:SetPoint("RIGHT", artworkChoice, "LEFT", -8, 0)
+    local t = themes[db.theme]
+    settings.previewText:SetTextColor(t[5], t[6], t[7])
+    settings.previewAccent:SetColorTexture(t[5], t[6], t[7], 1)
+    applyTheme()
+    settings:Hide()
+end
+
+showView = function(view)
+    activeView = view
+    if settings and settings.artPreview then settings.artPreview:Hide() end
+    if contactMenu then contactMenu:Hide() end
+    if customEditor then customEditor:Hide() end
+    if view ~= "chat" and input then input:ClearFocus() end
+    if view ~= "search" and searchInput then searchInput:ClearFocus() end
+    sidebar:SetShown(view == "chat")
+    conversationView:SetShown(view == "chat")
+    if settings then settings:SetShown(view == "settings") end
+    if searchView then searchView:SetShown(view == "search") end
+    if window.presence then window.presence:SetShown(view == "chat") end
+    if palette then palette:Hide() end
+    if actionMenu then actionMenu:Hide() end
+    if newChat then newChat:Hide() end
+    if window.contactFilter then window.contactFilter:ClearFocus() end
+    window.settingsButton:SetText(view == "settings" and "Back" or "Settings")
+    window.searchButton:SetText(view == "search" and "Back" or "Search")
+    if view == "chat" then
+        if current and db.conversations[current] then db.conversations[current].unread = 0 end
+        refreshContacts()
+        refreshMinimap()
+        refreshTranscript()
+    elseif view == "settings" then
+        window.heading:SetText("Preferences")
+    else
+        window.heading:SetText("Search")
+        if searchInput then searchInput:SetFocus() end
+    end
+end
+
+local function showConversation(name, selectedKey)
+    if inCombat() then
+        DEFAULT_CHAT_FRAME:AddMessage("Forever Whisper opens after combat; whispers remain in WoW chat for now.")
+        return
+    end
+    makeWindow()
+    local key = selectedKey or (name and conversation(name))
+    if key then
+        selectConversation(key)
+    elseif current and db.conversations[current] then
+        selectConversation(current)
+    else
+        local recent = names()
+        if recent[1] then selectConversation(recent[1].key) end
+    end
+    showView("chat")
+    window:Show()
+end
+
+local function chatFilter(_, event, ...)
+    if not db or db.keepChat or inCombat() then return false end
+    if event == "CHAT_MSG_BN_WHISPER" or event == "CHAT_MSG_BN_WHISPER_INFORM" then
+        return NS.ResolveBNetID(select(13, ...)) ~= nil
+    end
+    return event == "CHAT_MSG_WHISPER" or event == "CHAT_MSG_WHISPER_INFORM"
+end
+
+SLASH_FOREVERWHISPER1 = "/fw"
+SLASH_FOREVERWHISPER2 = "/foreverwhisper"
+SlashCmdList.FOREVERWHISPER = function(command)
+    command = (command or ""):match("^%s*(.-)%s*$")
+    if command == "minimap" then
+        db.showMinimap = not db.showMinimap
+        refreshMinimap()
+        DEFAULT_CHAT_FRAME:AddMessage("Forever Whisper minimap button " ..
+            (db.showMinimap and "shown." or "hidden. Use /fw minimap to show it again."))
+    elseif command == "settings" or command == "config" then
+        if inCombat() then
+            DEFAULT_CHAT_FRAME:AddMessage("Forever Whisper settings are available after combat.")
+            return
+        end
+        makeWindow()
+        makeSettings()
+        showView("settings")
+        window:Show()
+    elseif command ~= "" then
+        showConversation(command)
+    else
+        showConversation()
+    end
+end
+
+local function positionMinimapButton()
+    if not minimapButton then return end
+    local angle = math.rad(db.minimapAngle)
+    -- Place the speech bubble just beyond the minimap edge.
+    local radius = (Minimap:GetWidth() or 140) / 2 + 12
+    minimapButton:ClearAllPoints()
+    minimapButton:SetPoint("CENTER", Minimap, "CENTER",
+        math.cos(angle) * radius, math.sin(angle) * radius)
+end
+
+local function makeMinimapButton()
+    if minimapButton or not Minimap then return end
+    minimapButton = CreateFrame("Button", "ForeverWhisperMinimapButton", Minimap)
+    minimapButton:SetSize(31, 31)
+    minimapButton:SetFrameStrata("MEDIUM")
+    minimapButton:SetFrameLevel(Minimap:GetFrameLevel() + 8)
+    minimapButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    minimapButton:RegisterForDrag("LeftButton")
+    local icon = minimapButton:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(28, 28)
+    icon:SetPoint("CENTER")
+    icon:SetTexture("Interface\\AddOns\\ForeverWhisper\\UI\\WhisperMark.tga")
+    local badge = minimapButton:CreateTexture(nil, "OVERLAY")
+    badge:SetSize(18, 16)
+    badge:SetPoint("TOPRIGHT", 3, 3)
+    badge:SetColorTexture(0.78, 0.19, 0.21, 1)
+    minimapButton.badge = badge
+    local badgeText = minimapButton:CreateFontString(nil, "OVERLAY")
+    badgeText:SetPoint("CENTER", badge, "CENTER", 0, 0)
+    badgeText:SetFont("Fonts\\ARIALN.TTF", 11, "OUTLINE")
+    minimapButton.badgeText = badgeText
+    minimapButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+        GameTooltip:AddLine("Forever Whisper", 0.45, 0.86, 0.90)
+        GameTooltip:AddLine("Left-click: open chats", 1, 1, 1)
+        GameTooltip:AddLine("Right-click: settings", 1, 1, 1)
+        GameTooltip:AddLine("Drag: move around minimap", 0.75, 0.81, 0.87)
+        GameTooltip:Show()
+    end)
+    minimapButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    minimapButton:SetScript("OnMouseDown", function(self)
+        self.moved = false
+    end)
+    minimapButton:SetScript("OnDragStart", function(self)
+        self:SetScript("OnUpdate", function()
+            local x, y = GetCursorPosition()
+            local scale = Minimap:GetEffectiveScale()
+            local centerX, centerY = Minimap:GetCenter()
+            if not centerX or not centerY or not scale or scale == 0 then return end
+            local dx, dy = x / scale - centerX, y / scale - centerY
+            local angle
+            if math.atan2 then
+                angle = math.deg(math.atan2(dy, dx))
+            elseif dx == 0 then
+                angle = dy >= 0 and 90 or 270
+            else
+                angle = math.deg(math.atan(dy / dx))
+                if dx < 0 then angle = angle + 180 end
+            end
+            db.minimapAngle = (angle + 360) % 360
+            self.moved = true
+            positionMinimapButton()
+        end)
+    end)
+    minimapButton:SetScript("OnDragStop", function(self) self:SetScript("OnUpdate", nil) end)
+    minimapButton:SetScript("OnClick", function(self, mouseButton)
+        if self.moved then self.moved = false; return end
+        if mouseButton == "RightButton" then
+            SlashCmdList.FOREVERWHISPER("settings")
+        elseif window and window:IsShown() then
+            window:Hide()
+        else
+            showConversation()
+        end
+    end)
+    positionMinimapButton()
+    refreshMinimap()
+end
+
+FW:RegisterEvent("ADDON_LOADED")
+StaticPopupDialogs["FOREVERWHISPER_IGNORE"] = {
+    text = "Ignore %s? You will stop receiving their whispers.",
+    button1 = YES,
+    button2 = NO,
+    OnAccept = function(_, name)
+        if C_FriendList and C_FriendList.AddIgnore then
+            C_FriendList.AddIgnore(name)
+        elseif AddIgnore then
+            AddIgnore(name)
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+}
+StaticPopupDialogs["FOREVERWHISPER_CLEAR"] = {
+    text = "Clear saved chat history with %s?",
+    button1 = YES,
+    button2 = NO,
+    OnAccept = function(_, key)
+        local c = db and db.conversations[key]
+        if c then
+            c.messages = {}
+            c.unread = 0
+            refreshTranscript()
+            refreshContacts()
+            refreshMinimap()
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+}
+FW:SetScript("OnEvent", function(_, event, ...)
+    if event == "ADDON_LOADED" then
+        if ... ~= ADDON then return end
+        ForeverWhisperDB = type(ForeverWhisperDB) == "table" and ForeverWhisperDB or {}
+        db = ForeverWhisperDB
+        if db.artwork == nil and db.blossoms ~= nil then db.artwork = db.blossoms ~= false end
+        db.blossoms = nil
+        for key, value in pairs(defaults) do
+            if db[key] == nil then db[key] = value end
+        end
+        if not db.schema or db.schema < 2 then
+            if db.width == 650 then db.width = 720 end
+            if db.height == 430 then db.height = 500 end
+            if db.font == 1 then db.font = 2 end
+            if db.theme == 1 then db.theme = 2 end
+            db.schema = 2
+        end
+        if db.schema == 2 then
+            if db.font == 2 then db.font = 5 end
+            if db.theme == 2 then db.theme = 7 end
+            db.schema = 3
+        end
+        db.shape = nil
+        if not db.sakuraMigration then
+            db.previousTheme = db.theme
+            db.theme = 9
+            db.sakuraMigration = true
+        end
+        if type(db.customActions) ~= "table" then db.customActions = {} end
+        local valid = {}
+        for _, action in ipairs(db.customActions) do
+            if #valid >= 3 then break end
+            local stock = type(action) == "table" and (
+                (action.label == "Ask to group" and action.template == "Want to group up, {name}?") or
+                (action.label == "Send my location" and action.template == "I'm in {zone}."))
+            if not stock and type(action) == "table" and type(action.label) == "string" and type(action.template) == "string" then
+                valid[#valid + 1] = { label = action.label:sub(1, 24), template = action.template:sub(1, 200) }
+            end
+        end
+        db.customActions = valid
+        db.recentEmoji = type(db.recentEmoji) == "table" and db.recentEmoji or {}
+        while #db.recentEmoji > 16 do table.remove(db.recentEmoji) end
+        db.width = clamp(db.width, 700, 1200)
+        db.height = clamp(db.height, 480, 850)
+        db.fontSize = clamp(db.fontSize, 10, 20)
+        db.scale = clamp(db.scale, 0.7, 1.4)
+        db.opacity = clamp(db.opacity, 0.2, 1)
+        db.artBrightness = clamp(db.artBrightness, 0.25, 1)
+        db.historyLimit = clamp(db.historyLimit, 20, 200)
+        db.font = clamp(db.font, 1, #fonts)
+        db.theme = clamp(db.theme, 1, #themes)
+        db.minimapAngle = clamp(db.minimapAngle, 0, 360)
+        db.conversations = type(db.conversations) == "table" and db.conversations or {}
+        if db.identitySchema ~= 1 then
+            db.conversations = NS.CanonicalConversations(db.conversations)
+            db.identitySchema = 1
+        end
+        makeWindow()
+        makeSettings()
+        combatPreview = NS.CreateCombatPreview(currentStyle)
+        social = NS.NewSocial(function(name)
+            local key = NS.PeerKey(name)
+            for _, c in pairs(db.conversations) do if c.kind ~= "bnet" and NS.PeerKey(c.name) == key then return true end end
+            return false
+        end, function() return db.typing end, function()
+            if window and window:IsShown() and activeView == "chat" and not inCombat() then
+                refreshPresence()
+                refreshContacts()
+            end
+        end)
+        makeMinimapButton()
+        ChatFrame_AddMessageEventFilter("CHAT_MSG_WHISPER", chatFilter)
+        ChatFrame_AddMessageEventFilter("CHAT_MSG_WHISPER_INFORM", chatFilter)
+        ChatFrame_AddMessageEventFilter("CHAT_MSG_BN_WHISPER", chatFilter)
+        ChatFrame_AddMessageEventFilter("CHAT_MSG_BN_WHISPER_INFORM", chatFilter)
+        FW:RegisterEvent("CHAT_MSG_WHISPER")
+        FW:RegisterEvent("CHAT_MSG_WHISPER_INFORM")
+        FW:RegisterEvent("FRIENDLIST_UPDATE")
+        FW:RegisterEvent("GUILD_ROSTER_UPDATE")
+        FW:RegisterEvent("PLAYER_GUILD_UPDATE")
+        FW:RegisterEvent("PLAYER_ENTERING_WORLD")
+        FW:RegisterEvent("PLAYER_REGEN_DISABLED")
+        FW:RegisterEvent("PLAYER_REGEN_ENABLED")
+        FW:RegisterEvent("CHAT_MSG_ADDON")
+        FW:RegisterEvent("CHAT_MSG_BN_WHISPER")
+        FW:RegisterEvent("CHAT_MSG_BN_WHISPER_INFORM")
+        FW:RegisterEvent("BN_CONNECTED")
+        FW:RegisterEvent("BN_DISCONNECTED")
+        FW:RegisterEvent("BN_FRIEND_INFO_CHANGED")
+        FW:RegisterEvent("BN_FRIEND_LIST_SIZE_CHANGED")
+        FW:UnregisterEvent("ADDON_LOADED")
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        NS.InvalidateBNet(false)
+        NS.InvalidateFriends()
+        makeMinimapButton()
+        positionMinimapButton()
+        guildPresenceDirty = true
+        if IsInGuild and IsInGuild() and C_GuildInfo and C_GuildInfo.GuildRoster then
+            C_GuildInfo.GuildRoster()
+        end
+        if window and window:IsShown() and activeView == "chat" then refreshPresence() end
+    elseif event == "BN_CONNECTED" or event == "BN_DISCONNECTED" or event == "BN_FRIEND_INFO_CHANGED" or event == "BN_FRIEND_LIST_SIZE_CHANGED" then
+        NS.InvalidateBNet(event == "BN_DISCONNECTED")
+        if window and window:IsShown() and activeView == "chat" and not inCombat() then
+            refreshPresence()
+            refreshContacts()
+        end
+    elseif event == "CHAT_MSG_ADDON" then
+        if social then social:Receive(...) end
+    elseif event == "FRIENDLIST_UPDATE" then
+        NS.InvalidateFriends()
+        if not inCombat() and window and window:IsShown() and activeView == "chat" then
+            refreshPresence()
+            refreshContacts()
+        end
+    elseif event == "GUILD_ROSTER_UPDATE" or event == "PLAYER_GUILD_UPDATE" then
+        guildPresenceDirty = true
+        if not inCombat() and window and window:IsShown() and activeView == "chat" then
+            refreshPresence()
+            refreshContacts()
+        end
+    elseif event == "CHAT_MSG_WHISPER" or event == "CHAT_MSG_WHISPER_INFORM"
+        or event == "CHAT_MSG_BN_WHISPER" or event == "CHAT_MSG_BN_WHISPER_INFORM" then
+        local message, author = ...
+        if type(message) ~= "string" or type(author) ~= "string" then return end
+        local bnet = event == "CHAT_MSG_BN_WHISPER" or event == "CHAT_MSG_BN_WHISPER_INFORM"
+        local outgoing = event == "CHAT_MSG_WHISPER_INFORM" or event == "CHAT_MSG_BN_WHISPER_INFORM"
+        local lineID, guid = select(11, ...)
+        local bnetID = bnet and select(13, ...) or nil
+        if bnet and not NS.ResolveBNetID(bnetID) then return end
+        local key = addMessage(author, message, outgoing, lineID, guid, bnetID)
+        if not key then return end
+        if social and not bnet then
+            if not outgoing then social:ClearTyping(author) end
+            social:Probe(author)
+        end
+        if inCombat() then
+            if not outgoing then
+                queuedInCombat = true
+                if db.combatPreview and combatPreview then
+                    combatPreview:ShowWhisper(author, renderEmoji(renderMapPins(message)))
+                end
+            end
+        else
+            if window and window:IsShown() then
+                if outgoing and (current ~= key or activeView ~= "chat") then
+                    selectConversation(key)
+                    showView("chat")
+                elseif not current and activeView == "chat" then
+                    selectConversation(key)
+                elseif current == key and activeView == "chat" then
+                    db.conversations[key].unread = 0
+                    refreshTranscript(true, true)
+                end
+                refreshContacts()
+                refreshMinimap()
+            else
+                showConversation(nil, key)
+            end
+            if not outgoing and db.sound and PlaySound then
+                PlaySound(SOUNDKIT and SOUNDKIT.TELL_MESSAGE or 3081)
+            end
+        end
+    elseif event == "PLAYER_REGEN_DISABLED" then
+        if social then social:Stop() end
+        if combatPreview then combatPreview:Reset() end
+        wasOpenAtCombat = window and window:IsShown() or false
+        if window then window:Hide() end
+        if settings then settings:Hide() end
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        if combatPreview then combatPreview:Reset() end
+        if queuedInCombat or wasOpenAtCombat then
+            if queuedInCombat then
+                local sorted = names()
+                for _, item in ipairs(sorted) do
+                    if item.data.unread and item.data.unread > 0 then
+                        current = item.key
+                        break
+                    end
+                end
+            end
+            showConversation()
+            if current then selectConversation(current) end
+        end
+        queuedInCombat, wasOpenAtCombat = false, false
+    end
+end)

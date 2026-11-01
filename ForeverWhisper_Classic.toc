@@ -1,0 +1,12 @@
+## Interface: 11509
+## Title: Forever Whisper
+## Notes: Messenger-style whispers for WoW Classic Era
+## Author: Vitaliy (chaminita94)
+## Version: 0.15.0
+## IconTexture: Interface\AddOns\ForeverWhisper\UI\WhisperMark.tga
+## SavedVariables: ForeverWhisperDB
+
+MessengerUI.lua
+Social.lua
+BattleNet.lua
+ForeverWhisper.lua

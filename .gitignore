@@ -1,0 +1,11 @@
+.release/
+.tools/
+__pycache__/
+*.pyc
+*.zip
+.env
+.env.*
+*.pem
+*.key
+WTF/
+Backups/

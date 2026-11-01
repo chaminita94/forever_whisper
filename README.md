@@ -1,0 +1,54 @@
+# Forever Whisper
+
+A customizable messenger for World of Warcraft whispers, with persistent conversations, themed artwork, and combat-friendly behavior.
+
+**Current source: 0.15.0 development build.** The recent Classic Era and Battle.net changes need further in-game testing before a stable release.
+
+## Features
+
+- Incoming messages on the left and your replies on the right, with sender labels and timestamps.
+- Character and Battle.net conversations, saved message history, unread indicators, and pinned chats.
+- Search by contact name or message text.
+- Reply arrows with quoted excerpts, copy chat, and supported native character actions such as invite, ignore, and report.
+- A minimap button and `/fw` command; `/fw Name` opens a character conversation.
+- Combat fallback to normal WoW chat, optional brief message previews, and reopening after combat.
+- Resizable, movable windows with adjustable fonts, text size, opacity, dimensions, and scale.
+- Nine color themes, optional themed corner and background artwork, brightness controls, and an artwork preview.
+- 103 texture emojis. Other players need compatible addon support to see the images; ordinary whisper text still uses Blizzard chat.
+- Optional typing indicators between compatible Forever Whisper users for character whispers. Battle.net typing and read receipts are not supported.
+
+Online status uses information available from Blizzard friends, guild, and Battle.net APIs. Unknown status is shown when reliable information is unavailable. There are no automatic /who queries.
+
+## Installation
+
+Download a packaged release and extract the `ForeverWhisper` folder into your client's `Interface/AddOns` directory. For a source checkout, copy the repository's addon files into a folder named `ForeverWhisper`; developer tools are not needed in game.
+
+The main TOC targets Forever (16001); the Classic TOC targets Classic Era (11509). Compatibility with other clients is not claimed. Check the file's supported game versions when downloading.
+
+Open with `/fw` or the minimap button. Settings controls appearance, artwork, history, and behavior. Settings and histories are stored locally in WoW SavedVariables.
+
+## Performance
+
+Message rows are reused, history is bounded, and artwork is static. Social information updates from game events rather than periodic server polling. Static artwork and fonts account for most package size. In-game memory and frame-time measurements are still needed; Python checks do not measure game performance.
+
+## Development
+
+Install Python 3.12, then run:
+
+```sh
+pip install -r requirements-dev.txt
+python tools/test_whisper.py
+```
+
+The tests execute Lua 5.1 using a WoW API test double. They check startup, message routing, histories, drafts, combat behavior, identity handling, and assets. Actual rendering, protected actions, and network delivery require in-game testing.
+
+See [RELEASING.md](RELEASING.md) for tag-triggered CurseForge uploads.
+
+## Credits and license
+
+Code is licensed under MIT; see [LICENSE](LICENSE). Bundled assets retain their separate licenses:
+
+- Twemoji graphics: CC BY 4.0, with attribution in [Emoji/LICENSE-GRAPHICS.txt](Emoji/LICENSE-GRAPHICS.txt).
+- Atkinson Hyperlegible and Instrument Serif fonts: SIL Open Font License, included in the Fonts directory.
+
+World of Warcraft and Battle.net are Blizzard trademarks. This is an independent community addon.
