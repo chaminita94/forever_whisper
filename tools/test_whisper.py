@@ -651,6 +651,40 @@ assert(#ForeverWhisperDB.conversations.deleteme.messages==1 and composer:GetText
 assert(not win.replyBar:IsShown(),"Deleted quote draft came back")
 StaticPopupDialogs.FOREVERWHISPER_DELETE.OnAccept(nil,"bnet:freddy#1111")
 assert(not ForeverWhisperDB.conversations["bnet:freddy#1111"] and ForeverWhisperDB.conversations.deleteme)
+-- Combat popup geometry is independent, saved, and editable without auto-dismissal.
+local toast=ForeverWhisperCombatPreview
+SlashCmdList.FOREVERWHISPER("popup reset")
+assert(toast:IsShown() and toast.editing and not toast.timer)
+assert(toast:GetWidth()==320 and toast:GetHeight()==92)
+toast.GetLeft=function() return 80 end
+toast.GetTop=function() return 800 end
+toast.GetCenter=function(self) return 80+self:GetWidth()/2,800-self:GetHeight()/2 end
+local px,py=400,300
+function GetCursorPosition() return px,py end
+combat=true
+toast:ShowWhisper("Alice","Adjust during combat")
+local expiring=timers[#timers]
+toast.resizeGrip.scripts.OnMouseDown(toast.resizeGrip,"LeftButton")
+expiring();assert(toast:IsShown(),"Popup expired while resizing")
+toast.resizeGrip.scripts.OnUpdate()
+assert(toast:GetWidth()==320 and toast:GetHeight()==92,"Popup jumped on resize start")
+px,py=480,180
+toast.resizeGrip.scripts.OnUpdate()
+toast.resizeGrip.scripts.OnMouseUp()
+assert(toast:GetWidth()==400 and toast:GetHeight()==212)
+assert(ForeverWhisperDB.popupWidth==400 and ForeverWhisperDB.popupHeight==212)
+assert(type(ForeverWhisperDB.popupX)=="number" and not toast.resizeGrip.scripts.OnUpdate)
+local beforeMove=timers[#timers]
+toast.scripts.OnDragStart(toast)
+beforeMove();assert(toast:IsShown(),"Popup expired while moving")
+toast.scripts.OnDragStop(toast)
+timers[#timers]();assert(not toast:IsShown(),"Dismissal did not resume after moving")
+combat=false
+toast.GetLeft,toast.GetTop,toast.GetCenter=nil,nil,nil
+GetCursorPosition=nil
+SlashCmdList.FOREVERWHISPER("popup reset")
+assert(not ForeverWhisperDB.popupX and not ForeverWhisperDB.popupWidth and toast:GetWidth()==320)
+toast:Hide()
 -- No idle per-frame handlers; minimap drag adds one only during dragging.
 for _,o in ipairs(objects) do assert(not o.scripts.OnUpdate,"Unexpected idle polling") end
 ''')

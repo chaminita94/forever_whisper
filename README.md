@@ -2,7 +2,7 @@
 
 A customizable messenger for World of Warcraft whispers, with persistent conversations, themed artwork, and combat-friendly behavior.
 
-**Current source: 0.15.0-beta4.** The recent Classic Era and Battle.net changes need further in-game testing before a stable release.
+**Current source: 0.15.0-beta5.** The recent Classic Era and Battle.net changes need further in-game testing before a stable release.
 
 ## Features
 
@@ -26,7 +26,7 @@ Download a packaged release and extract the `ForeverWhisper` folder into your cl
 
 The main TOC targets Forever (16001); the Classic TOC targets Classic Era (11509). Compatibility with other clients is not claimed. Check the file's supported game versions when downloading.
 
-Open with `/fw` or the minimap button. Settings controls appearance, artwork, history, and behavior. Settings and histories are stored locally in WoW SavedVariables.
+Open with `/fw` or the minimap button. Use **Settings > Arrange popup** or `/fw popup` to preview and position combat notifications. Drag the popup to move it, or its bottom-right grip to resize it, including during combat. Geometry saves automatically; `/fw popup reset` restores the default layout. The dismissal timer pauses during adjustments. Close the preview with X or right-click. Settings controls appearance, artwork, history, and behavior. Settings and histories are stored locally in WoW SavedVariables.
 
 ## Performance
 

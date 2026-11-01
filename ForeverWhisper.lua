@@ -2010,6 +2010,10 @@ local function makeSettings()
     local changeTheme = selector(themeChoice, "theme", themes, "Theme", applyTheme)
     label(settings, "BEHAVIOR", 11, "TOPLEFT", 26, -286)
         :SetTextColor(0.60, 0.77, 0.86)
+    local arrangePopup = button(settings, "Arrange popup", 120, 23, function()
+        if combatPreview then combatPreview:Arrange() end
+    end)
+    arrangePopup:SetPoint("TOPRIGHT", -26, -278)
     local function check(parent, rowIndex, text, field, apply)
         local row = CreateFrame("Frame", nil, parent)
         row:SetPoint("TOPLEFT", 0, -(rowIndex - 1) * 25)
@@ -2186,6 +2190,11 @@ SlashCmdList.FOREVERWHISPER = function(command)
         refreshMinimap()
         DEFAULT_CHAT_FRAME:AddMessage("Forever Whisper minimap button " ..
             (db.showMinimap and "shown." or "hidden. Use /fw minimap to show it again."))
+    elseif command == "popup" or command == "popup reset" then
+        if combatPreview then
+            if command == "popup reset" then combatPreview:ResetGeometry() end
+            combatPreview:Arrange()
+        end
     elseif command == "settings" or command == "config" then
         if inCombat() then
             DEFAULT_CHAT_FRAME:AddMessage("Forever Whisper settings are available after combat.")
@@ -2398,7 +2407,7 @@ FW:SetScript("OnEvent", function(_, event, ...)
         end
         makeWindow()
         makeSettings()
-        combatPreview = NS.CreateCombatPreview(currentStyle)
+        combatPreview = NS.CreateCombatPreview(currentStyle, db)
         social = NS.NewSocial(function(name)
             local key = NS.PeerKey(name)
             for _, c in pairs(db.conversations) do if c.kind ~= "bnet" and NS.PeerKey(c.name) == key then return true end end

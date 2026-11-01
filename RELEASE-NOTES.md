@@ -1,3 +1,13 @@
+# Forever Whisper 0.15.0-beta5
+
+## Adjustable combat popup
+
+- Drag combat whisper notifications to move them, including during combat.
+- Resize them from the bottom-right grip; position and dimensions are saved separately from the main chat window.
+- Pause automatic dismissal while moving or resizing, then resume the usual seven-second timer.
+- Add Settings > Arrange popup for a persistent preview, plus /fw popup and /fw popup reset commands.
+- Keep the larger message area responsive to the chosen popup size, without idle frame updates.
+
 # Forever Whisper 0.15.0-beta4
 
 ## Conversation management and resizing

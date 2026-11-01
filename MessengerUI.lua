@@ -133,13 +133,26 @@ function NS.CreateTranscript(parent, getStyle)
     return view
 end
 
-function NS.CreateCombatPreview(getStyle)
+function NS.CreateCombatPreview(getStyle, options)
+    options = options or {}
+    local function bound(value, low, high, fallback)
+        value = tonumber(value)
+        if not value or value ~= value then value = fallback end
+        return math.max(low, math.min(high, value))
+    end
     local toast = CreateFrame("Frame", "ForeverWhisperCombatPreview", UIParent)
-    toast:SetSize(320, 92)
-    toast:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -30, -160)
+    toast:SetSize(bound(options.popupWidth, 260, 600, 320), bound(options.popupHeight, 92, 240, 92))
+    if type(options.popupX) == "number" and type(options.popupY) == "number" then
+        toast:SetPoint("CENTER", UIParent, "CENTER", options.popupX, options.popupY)
+    else
+        toast:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -30, -160)
+    end
     toast:SetFrameStrata("DIALOG")
+    toast:SetFrameLevel(60)
     toast:SetClampedToScreen(true)
     toast:EnableMouse(true)
+    toast:SetMovable(true)
+    toast:RegisterForDrag("LeftButton")
     toast.bg = toast:CreateTexture(nil, "BACKGROUND")
     toast.bg:SetAllPoints()
     local icon = toast:CreateTexture(nil, "ARTWORK")
@@ -153,12 +166,14 @@ function NS.CreateCombatPreview(getStyle)
     toast.title:SetWordWrap(false)
     toast.preview = toast:CreateFontString(nil, "OVERLAY")
     toast.preview:SetPoint("TOPLEFT", 12, -35)
-    toast.preview:SetPoint("TOPRIGHT", -12, -35)
-    toast.preview:SetHeight(30)
+    toast.preview:SetPoint("BOTTOMRIGHT", -12, 28)
     toast.preview:SetJustifyH("LEFT")
     toast.preview:SetWordWrap(true)
     toast.note = toast:CreateFontString(nil, "OVERLAY")
     toast.note:SetPoint("BOTTOMLEFT", 12, 9)
+    toast.note:SetPoint("BOTTOMRIGHT", -28, 9)
+    toast.note:SetJustifyH("LEFT")
+    toast.note:SetWordWrap(false)
     toast.note:SetFont("Fonts\\ARIALN.TTF", 10, "")
     toast.note:SetText("Saved — opens after combat")
     toast.note:SetTextColor(0.63, 0.73, 0.81)
@@ -172,7 +187,76 @@ function NS.CreateCombatPreview(getStyle)
     close:SetScript("OnClick", function() toast:Hide() end)
     toast:SetScript("OnMouseDown", function(_, button) if button == "RightButton" then toast:Hide() end end)
     toast.count, toast.serial = 0, 0
+    function toast:SaveGeometry()
+        options.popupWidth, options.popupHeight = self:GetWidth(), self:GetHeight()
+        local x, y = self:GetCenter()
+        local px, py = UIParent:GetCenter()
+        if x and y and px and py then
+            local ratio = UIParent:GetEffectiveScale() / self:GetEffectiveScale()
+            options.popupX, options.popupY = x - px * ratio, y - py * ratio
+        end
+    end
+    function toast:CancelTimer()
+        self.serial = self.serial + 1
+        if self.timer then self.timer:Cancel(); self.timer = nil end
+    end
+    function toast:ArmTimer()
+        self:CancelTimer()
+        if self.editing or self.moving or self.resizing then return end
+        local serial = self.serial
+        local function expire() if toast.serial == serial then toast:Hide() end end
+        if C_Timer and C_Timer.NewTimer then self.timer = C_Timer.NewTimer(7, expire)
+        elseif C_Timer and C_Timer.After then C_Timer.After(7, expire) end
+    end
+    local resize = CreateFrame("Button", nil, toast)
+    toast.resizeGrip = resize
+    resize:SetSize(20, 20)
+    resize:SetPoint("BOTTOMRIGHT", -2, 2)
+    resize:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+    resize:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+    local function finishInteraction()
+        if not toast.moving and not toast.resizing then return end
+        if toast.moving then toast:StopMovingOrSizing() end
+        toast.moving, toast.resizing = nil, nil
+        resize:SetScript("OnUpdate", nil)
+        toast:SaveGeometry()
+        if toast:IsShown() then toast:ArmTimer() end
+    end
+    toast:SetScript("OnDragStart", function(self)
+        if self.resizing then return end
+        self:CancelTimer()
+        self.moving = true
+        self:StartMoving()
+    end)
+    toast:SetScript("OnDragStop", finishInteraction)
+    resize:SetScript("OnMouseDown", function(_, mouseButton)
+        if mouseButton ~= "LeftButton" or toast.moving then return end
+        local left, top = toast:GetLeft(), toast:GetTop()
+        if not left or not top then return end
+        local x, y = GetCursorPosition()
+        local scale = toast:GetEffectiveScale()
+        toast:CancelTimer()
+        toast.resizing = true
+        local width, height = toast:GetWidth(), toast:GetHeight()
+        local maxWidth = math.max(width, math.min(600, UIParent:GetWidth() * UIParent:GetEffectiveScale() / scale - left))
+        local maxHeight = math.max(height, math.min(240, top))
+        toast:ClearAllPoints()
+        toast:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
+        resize:SetScript("OnUpdate", function()
+            if IsMouseButtonDown and not IsMouseButtonDown("LeftButton") then finishInteraction(); return end
+            local cx, cy = GetCursorPosition()
+            local w, h = bound(width + (cx-x)/scale, 260, maxWidth, width), bound(height - (cy-y)/scale, 92, maxHeight, height)
+            if w ~= toast:GetWidth() or h ~= toast:GetHeight() then toast:SetSize(w, h) end
+        end)
+    end)
+    resize:SetScript("OnMouseUp", finishInteraction)
+    toast:SetScript("OnHide", function(self)
+        finishInteraction()
+        self.editing = nil
+        self:CancelTimer()
+    end)
     function toast:ShowWhisper(author, text)
+        self.editing = nil
         self.count, self.serial = self.count + 1, self.serial + 1
         local path, size, t = getStyle()
         self.bg:SetColorTexture(t[2], t[3], t[4], 0.97)
@@ -183,14 +267,22 @@ function NS.CreateCombatPreview(getStyle)
         self.preview:SetTextColor(0.84, 0.89, 0.94)
         self.preview:SetText(text)
         self:Show()
-        local serial = self.serial
-        if self.timer then self.timer:Cancel(); self.timer = nil end
-        local function expire() if toast.serial == serial then toast:Hide() end end
-        if C_Timer and C_Timer.NewTimer then
-            self.timer = C_Timer.NewTimer(7, expire)
-        elseif C_Timer and C_Timer.After then
-            C_Timer.After(7, expire)
-        end
+        self.note:SetText("Saved - opens after combat")
+        self:ArmTimer()
+    end
+    function toast:Arrange()
+        self:Reset()
+        self:ShowWhisper("Whisper preview", "Drag this popup to move it. Drag the bottom-right corner to change its size.")
+        self.editing, self.count = true, 0
+        self:CancelTimer()
+        self.note:SetText("Position and size saved automatically")
+    end
+    function toast:ResetGeometry()
+        self:Reset()
+        options.popupX, options.popupY, options.popupWidth, options.popupHeight = nil, nil, nil, nil
+        self:ClearAllPoints()
+        self:SetSize(320, 92)
+        self:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -30, -160)
     end
     function toast:Reset()
         if self.timer then self.timer:Cancel(); self.timer = nil end
