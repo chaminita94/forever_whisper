@@ -14,7 +14,7 @@ A customizable messenger for World of Warcraft whispers, with persistent convers
 - Search by contact name, local nickname, private note, or message text.
 - Set a nickname and private note from a contact's right-click menu; these stay local.
 - Choose Notify when online individually for the contacts you want to watch. Alerts appear on known offline-to-online transitions and follow the addon sound setting. Choose Popup, Chat, or Popup + Chat in Settings > Popup options. Online popups use a green status icon and wait behind whisper previews; they do not add messages or unread counts. Unknown contacts require available friend/guild status.
-- Click a web URL to select it in the copy window, then press Ctrl+C. Right-click a message for Copy link or Copy links when URLs are present.
+- Left- or right-click a web URL to select it in a compact bar inside the conversation, then press Ctrl+C. Escape closes the bar without losing your message draft. Right-click a message for Copy link or Copy links when URLs are present.
 - Right-click a message for Copy text or Reply. Copy text opens a selectable field; press Ctrl+C. Reply excerpts are shortened with ... and omit the sender name from the sent prefix.
 - Delete a conversation and its saved history from the right-click menu, with confirmation. New whispers can create it again.
 - Reply buttons with quoted excerpts, copy chat, and supported native character actions such as invite, ignore, and report.

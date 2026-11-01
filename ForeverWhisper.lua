@@ -733,6 +733,7 @@ local function selectConversation(key)
     local c = db.conversations[key]
     if not c then return end
     local sameConversation = current == key
+    if not sameConversation and window and window.urlCopy then window.urlCopy:Hide() end
     searchJump = nil
     if current ~= key then NS.unreadBoundary = nil end
     local first = firstUnread(c)
@@ -1030,10 +1031,62 @@ end
 
 function NS.CopyURLText(text)
     if not current or not db.conversations[current] then return end
-    copyHistory(current)
-    copyBox:SetText(text)
-    copyBox:SetFocus()
-    copyBox:HighlightText()
+    if not window.urlCopy then
+        local strip = CreateFrame("Frame", "ForeverWhisperLinkCopy", conversationView)
+        window.urlCopy = strip
+        strip:SetFrameLevel(conversationView:GetFrameLevel() + 12)
+        strip:EnableMouse(true)
+        strip.bg = fill(strip, 0.08, 0.13, 0.19, 0.99)
+        strip.hint = label(strip, "Link selected - Ctrl+C to copy", 11, "TOPLEFT", 10, -6)
+        strip.hint:SetTextColor(0.60, 0.82, 0.95)
+        local close = button(strip, "Close", 48, 20, function() NS.CloseURLCopy() end)
+        close:SetPoint("TOPRIGHT", -6, -4)
+        strip.scroll = CreateFrame("ScrollFrame", nil, strip)
+        strip.scroll:SetPoint("TOPLEFT", 8, -29)
+        strip.scroll:SetPoint("BOTTOMRIGHT", -8, 7)
+        fill(strip.scroll, 0.035, 0.065, 0.10, 1)
+        strip.scroll:EnableMouseWheel(true)
+        strip.box = CreateFrame("EditBox", nil, strip.scroll)
+        strip.box:SetAutoFocus(false)
+        strip.box:SetFont("Fonts\\ARIALN.TTF", 13, "")
+        strip.box:SetTextColor(0.88, 0.95, 1)
+        strip.box:SetTextInsets(7, 7, 0, 0)
+        strip.box:SetPoint("TOPLEFT")
+        strip.scroll:SetScrollChild(strip.box)
+        strip.scroll:SetScript("OnMouseWheel", function(self, delta)
+            self:SetVerticalScroll(math.max(0, math.min(strip.box:GetHeight()-self:GetHeight(), self:GetVerticalScroll()-delta*20)))
+        end)
+        strip.box:SetScript("OnEscapePressed", function() NS.CloseURLCopy() end)
+        strip:SetScript("OnSizeChanged", function(self)
+            strip.box:SetWidth(math.max(160, self:GetWidth()-16))
+        end)
+        strip:SetScript("OnHide", function()
+            strip.box:ClearFocus()
+            if updateReplyPreview then updateReplyPreview() end
+        end)
+    end
+    local strip = window.urlCopy
+    local multiple = text:find("\n", 1, true) ~= nil
+    strip:SetHeight(multiple and 90 or 60)
+    strip.box:SetMultiLine(multiple)
+    strip.hint:SetText(multiple and "Links selected - Ctrl+C to copy all" or "Link selected - Ctrl+C to copy")
+    local t = themes[db.theme]
+    strip.bg:SetColorTexture(t[2], t[3], t[4], 0.99)
+    strip:Show()
+    if updateReplyPreview then updateReplyPreview() end
+    strip.box:SetWidth(math.max(160, window:GetWidth()-CONTENT_LEFT-41))
+    local lines = 1
+    for _ in text:gmatch("\n") do lines = lines + 1 end
+    strip.box:SetHeight(multiple and math.max(54, (lines+math.ceil(#text/60))*18) or 24)
+    strip.scroll:SetVerticalScroll(0)
+    strip.box:SetText(text)
+    strip.box:SetFocus()
+    strip.box:HighlightText()
+end
+
+function NS.CloseURLCopy()
+    if window and window.urlCopy then window.urlCopy:Hide() end
+    if input and current and window and window:IsShown() and not inCombat() then input:SetFocus() end
 end
 
 local function editContact(key)
@@ -1740,6 +1793,14 @@ local function makeWindow()
     cancelReply:SetPoint("RIGHT", -6, 0)
     updateReplyPreview = function()
         local reply = current and replyDrafts[current]
+        local base = reply and 130 or 80
+        local strip = window.urlCopy
+        local copyHeight = strip and strip:IsShown() and (strip:GetHeight() + 6) or 0
+        if strip then
+            strip:ClearAllPoints()
+            strip:SetPoint("BOTTOMLEFT", CONTENT_LEFT, base)
+            strip:SetPoint("BOTTOMRIGHT", -25, base)
+        end
         replyBar:SetShown(reply ~= nil)
         if reply then
             replyBar.title:SetText("Replying to " .. reply.who)
@@ -1747,9 +1808,9 @@ local function makeWindow()
         end
         transcript:ClearAllPoints()
         transcript:SetPoint("TOPLEFT", CONTENT_LEFT, -118)
-        transcript:SetPoint("BOTTOMRIGHT", -23, reply and 130 or 80)
+        transcript:SetPoint("BOTTOMRIGHT", -23, base + copyHeight)
         window.latest:ClearAllPoints()
-        window.latest:SetPoint("BOTTOMRIGHT", -25, reply and 126 or 76)
+        window.latest:SetPoint("BOTTOMRIGHT", -25, base + copyHeight - 4)
         if input and input:GetScript("OnTextChanged") then input:GetScript("OnTextChanged")(input, false) end
     end
     replyBar:Hide()
@@ -2118,6 +2179,7 @@ local function makeWindow()
     palette:Hide()
     window:SetScript("OnHide", function()
         window:EndCursorDrag()
+        if window.urlCopy then window.urlCopy:Hide() end
         NS.unreadBoundary, NS.jumpToUnread = nil, nil
         finishResize()
         palette:Hide()
@@ -2415,6 +2477,7 @@ end
 
 showView = function(view)
     activeView = view
+    if view ~= "chat" and window.urlCopy then window.urlCopy:Hide() end
     if view ~= "settings" and settings and settings.popupOptions then settings.popupOptions:Hide() end
     if settings and settings.artPreview then settings.artPreview:Hide() end
     if contactMenu then contactMenu:Hide() end
