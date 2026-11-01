@@ -565,6 +565,8 @@ bnRows[1].gameAccountInfo.isOnline=true
 event("BN_FRIEND_ACCOUNT_ONLINE",10)
 assert(contactRow("bnet:freddy#1111").detail.text:find("Online",1,true))
 -- Online alerts are opt-in per contact and do not repeat on ordinary roster updates.
+assert(ForeverWhisperDB.onlineNotifyMode=="popup")
+ForeverWhisperDB.onlineNotifyMode="chat"
 assert(not bnChat.notifyOnline)
 bnRows[1].gameAccountInfo.isOnline=false;event("BN_FRIEND_ACCOUNT_OFFLINE",10)
 rightClick("bnet:freddy#1111");click("Notify when online")
@@ -577,6 +579,7 @@ rightClick("bnet:freddy#1111");click("Disable online notification")
 bnRows[1].gameAccountInfo.isOnline=false;event("BN_FRIEND_ACCOUNT_OFFLINE",10)
 bnRows[1].gameAccountInfo.isOnline=true;event("BN_FRIEND_ACCOUNT_ONLINE",10)
 assert(#DEFAULT_CHAT_FRAME.lines==noticeCount+1,"Disabled contact still notified")
+ForeverWhisperDB.onlineNotifyMode="popup"
 rightClick("bnet:freddy#1111");click("Nickname / private note...")
 ForeverWhisperContactDetails.nickname:SetText("Raid Buddy")
 ForeverWhisperContactDetails.note:SetText("Tuesday healer")
@@ -656,6 +659,34 @@ assert(math.abs(win:GetWidth()-942.4)<0.001 and math.abs(win:GetHeight()-621.6)<
 assert(not win.resizeGrip.scripts.OnUpdate,"Resize polling continued after release")
 assert(math.abs(ForeverWhisperDB.x-(120+942.4/2-400/1.25))<0.001,
     "Saved position mixed top-left offsets with center offsets")
+-- Dragging the frame or its title preserves the grab offset at non-default scale.
+win.GetCenter=function(self)
+    local _,_,_,left,top=self:GetPoint()
+    return left+self:GetWidth()/2,top-self:GetHeight()/2
+end
+cursorX,cursorY=1000,800
+win.scripts.OnDragStart(win)
+local _,_,_,dragLeft,dragTop=win:GetPoint()
+assert(dragLeft==120 and dragTop==650,"Window jumped at drag start")
+win.scripts.OnUpdate(win)
+local _,_,_,stillLeft,stillTop=win:GetPoint()
+assert(stillLeft==120 and stillTop==650,"Stationary cursor moved the window")
+cursorX,cursorY=1037.5,775
+win.scripts.OnUpdate(win)
+local _,_,_,movedLeft,movedTop=win:GetPoint()
+assert(movedLeft==150 and movedTop==630,"Drag did not respect UI scale/grab offset")
+cursorX,cursorY=1000,800;win.scripts.OnUpdate(win)
+local _,_,_,returnedLeft,returnedTop=win:GetPoint()
+assert(returnedLeft==120 and returnedTop==650,"Returning cursor did not restore original position")
+win.scripts.OnDragStop(win)
+assert(not win.scripts.OnUpdate and not win.cursorDragging)
+win.nameTarget.scripts.OnDragStart()
+assert(win.cursorDragging,"Title bar did not use the same drag behavior")
+win.nameTarget.scripts.OnDragStop()
+assert(not win.scripts.OnUpdate)
+win.nameTarget.scripts.OnDragStart()
+win:Hide()
+assert(not win.cursorDragging and not win.scripts.OnUpdate,"Hidden window kept dragging")
 win.GetEffectiveScale,win.GetLeft,win.GetTop,win.GetCenter=nil,nil,nil,nil
 GetCursorPosition=nil
 -- Deleting an active conversation removes only that contact and discards its draft.
@@ -794,6 +825,42 @@ for _,key in ipairs(keys) do
 end
 win.contactCount.scripts.OnClick();assert(ForeverWhisperDB.contactSort=="online")
 win.contactCount.scripts.OnClick();assert(ForeverWhisperDB.contactSort=="recent")
+-- Online popups share geometry but never replace a whisper or create fake chat history.
+local alice=ForeverWhisperDB.conversations.alice
+alice.notifyOnline,alice.muted=true,nil
+friendRows[1].connected=false;event("FRIENDLIST_UPDATE")
+ForeverWhisperDB.onlineNotifyMode="popup"
+toast:Reset()
+toast:ShowWhisper("Whisper first","Do not replace this")
+local onlineHistory,onlineUnread=#alice.messages,alice.unread
+local onlineChatCount=#DEFAULT_CHAT_FRAME.lines
+friendRows[1].connected=true;event("FRIENDLIST_UPDATE")
+assert(toast.kind=="whisper" and toast.title.text=="Whisper first" and #toast.onlineQueue==1)
+assert(#alice.messages==onlineHistory and alice.unread==onlineUnread,"Online alert created a fake message/unread badge")
+assert(#DEFAULT_CHAT_FRAME.lines==onlineChatCount,"Popup-only mode also printed to chat")
+timers[#timers]();timers[#timers]()
+assert(toast.kind=="online" and toast.title.text=="Alice is now online")
+assert(not toast.preview:IsShown() and toast.icon.texture:find("StatusIcon-Online",1,true))
+toast:ShowWhisper("Actual whisper","Has priority")
+assert(toast.kind=="whisper" and toast.title.text=="Actual whisper" and toast.count==1)
+friendRows[1].connected=false;event("FRIENDLIST_UPDATE")
+friendRows[1].connected=true;event("FRIENDLIST_UPDATE")
+assert(#toast.onlineQueue==1)
+alice.notifyOnline=nil
+timers[#timers]();timers[#timers]()
+assert(not toast:IsShown(),"Disabled contact's queued alert was still displayed")
+alice.notifyOnline=true
+ForeverWhisperDB.onlineNotifyMode="both"
+friendRows[1].connected=false;event("FRIENDLIST_UPDATE")
+friendRows[1].connected=true;event("FRIENDLIST_UPDATE")
+assert(toast.kind=="online" and #DEFAULT_CHAT_FRAME.lines==onlineChatCount+1)
+toast:Reset()
+alice.muted=true
+friendRows[1].connected=false;event("FRIENDLIST_UPDATE")
+friendRows[1].connected=true;event("FRIENDLIST_UPDATE")
+assert(not toast:IsShown() and #DEFAULT_CHAT_FRAME.lines==onlineChatCount+1)
+alice.notifyOnline,alice.muted=nil,nil
+ForeverWhisperDB.onlineNotifyMode="popup"
 -- No idle per-frame handlers; minimap drag adds one only during dragging.
 for _,o in ipairs(objects) do assert(not o.scripts.OnUpdate,"Unexpected idle polling") end
 ''')

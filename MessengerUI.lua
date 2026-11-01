@@ -1,5 +1,45 @@
 local _, NS = ...
 
+-- Move from cursor deltas in frame coordinates; never let StartMoving re-anchor the frame.
+function NS.AttachCursorDrag(frame, stopped, allowed, started)
+    function frame:EndCursorDrag()
+        if not self.cursorDragging then return end
+        self.cursorDragging = nil
+        self:SetScript("OnUpdate", nil)
+        if stopped then stopped(self) end
+    end
+    function frame:BeginCursorDrag()
+        if self.cursorDragging or (allowed and not allowed()) then return end
+        local left, top = self:GetLeft(), self:GetTop()
+        if not left or not top then return end
+        local x, y = GetCursorPosition()
+        local scale = self:GetEffectiveScale()
+        local ratio = UIParent:GetEffectiveScale() / scale
+        self.cursorDragging = { x=x, y=y, lastX=x, lastY=y, left=left, top=top, scale=scale,
+            screenWidth=UIParent:GetWidth()*ratio, screenHeight=UIParent:GetHeight()*ratio }
+        self:ClearAllPoints()
+        self:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
+        if started then started(self) end
+        self:SetScript("OnUpdate", function(owner)
+            if (allowed and not allowed()) or (IsMouseButtonDown and not IsMouseButtonDown("LeftButton")) then
+                owner:EndCursorDrag()
+                return
+            end
+            local state = owner.cursorDragging
+            local cx, cy = GetCursorPosition()
+            if state.lastX == cx and state.lastY == cy then return end
+            state.lastX, state.lastY = cx, cy
+            local nextLeft = math.max(0, math.min(state.screenWidth-owner:GetWidth(), state.left+(cx-state.x)/state.scale))
+            local nextTop = math.max(owner:GetHeight(), math.min(state.screenHeight, state.top+(cy-state.y)/state.scale))
+            owner:ClearAllPoints()
+            owner:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", nextLeft, nextTop)
+        end)
+    end
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", function(self) self:BeginCursorDrag() end)
+    frame:SetScript("OnDragStop", function(self) self:EndCursorDrag() end)
+end
+
 -- Native, pooled message rows. One scrollbar owns incoming and outgoing messages.
 function NS.CreateTranscript(parent, getStyle)
     local view = CreateFrame("ScrollFrame", nil, parent)
@@ -193,6 +233,7 @@ function NS.CreateCombatPreview(getStyle, options)
     toast.bg = toast:CreateTexture(nil, "BACKGROUND")
     toast.bg:SetAllPoints()
     local icon = toast:CreateTexture(nil, "ARTWORK")
+    toast.icon = icon
     icon:SetTexture("Interface\\AddOns\\ForeverWhisper\\UI\\WhisperMark.tga")
     icon:SetPoint("TOPLEFT", 10, -10)
     icon:SetSize(26, 26)
@@ -224,6 +265,45 @@ function NS.CreateCombatPreview(getStyle, options)
     close:SetScript("OnClick", function() toast:Hide() end)
     toast:SetScript("OnMouseDown", function(_, button) if button == "RightButton" then toast:Hide() end end)
     toast.count, toast.serial = 0, 0
+    toast.onlineQueue, toast.onlinePending = {}, {}
+    function toast:ShowNextOnline()
+        if self:IsShown() or self.editing then return end
+        while #self.onlineQueue > 0 do
+            local entry = table.remove(self.onlineQueue, 1)
+            self.onlinePending[entry.key] = nil
+            if not self.onlineAllowed or self.onlineAllowed(entry.key) then
+                self.kind, self.onlineKey, self.count = "online", entry.key, 0
+                local _, _, t = getStyle()
+                self.bg:SetColorTexture(t[2], t[3], t[4], 0.97)
+                self.icon:SetTexture("Interface\\FriendsFrame\\StatusIcon-Online")
+                self.title:SetText(entry.author .. " is now online")
+                self.title:SetTextColor(0.42, 0.90, 0.64)
+                self.preview:SetText("")
+                self.note:SetText("Friend online")
+                self:ApplyOptions()
+                self:Show()
+                self:ArmTimer()
+                return
+            end
+        end
+    end
+    function toast:QueueOnline(key, author)
+        if self.onlinePending[key] or (self.kind == "online" and self.onlineKey == key) then return end
+        if #self.onlineQueue >= 8 then
+            local removed = table.remove(self.onlineQueue, 1)
+            self.onlinePending[removed.key] = nil
+        end
+        self.onlineQueue[#self.onlineQueue + 1] = { key = key, author = author }
+        self.onlinePending[key] = true
+        self:ShowNextOnline()
+    end
+    function toast:DropOnline(key)
+        for i = #self.onlineQueue, 1, -1 do
+            if self.onlineQueue[i].key == key then table.remove(self.onlineQueue, i) end
+        end
+        self.onlinePending[key] = nil
+        if self.kind == "online" and self.onlineKey == key then self:Hide() end
+    end
     function toast:SaveGeometry()
         options.popupWidth, options.popupHeight = self:GetWidth(), self:GetHeight()
         local x, y = self:GetCenter()
@@ -253,20 +333,17 @@ function NS.CreateCombatPreview(getStyle, options)
     resize:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
     resize:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
     local function finishInteraction()
+        if toast.cursorDragging then toast:EndCursorDrag(); return end
         if not toast.moving and not toast.resizing then return end
-        if toast.moving then toast:StopMovingOrSizing() end
         toast.moving, toast.resizing = nil, nil
         resize:SetScript("OnUpdate", nil)
         toast:SaveGeometry()
         if toast:IsShown() then toast:ArmTimer() end
     end
-    toast:SetScript("OnDragStart", function(self)
-        if self.resizing or options.popupLocked then return end
+    NS.AttachCursorDrag(toast, finishInteraction, function() return not toast.resizing and not options.popupLocked end, function(self)
         self:CancelTimer()
         self.moving = true
-        self:StartMoving()
     end)
-    toast:SetScript("OnDragStop", finishInteraction)
     resize:SetScript("OnMouseDown", function(_, mouseButton)
         if mouseButton ~= "LeftButton" or toast.moving or options.popupLocked then return end
         local left, top = toast:GetLeft(), toast:GetTop()
@@ -291,13 +368,21 @@ function NS.CreateCombatPreview(getStyle, options)
     toast:SetScript("OnHide", function(self)
         finishInteraction()
         self.editing = nil
+        self.kind, self.onlineKey = nil, nil
         self:CancelTimer()
+        if #self.onlineQueue > 0 and not self.pendingDispatch and C_Timer and C_Timer.After then
+            self.pendingDispatch = true
+            C_Timer.After(0, function()
+                self.pendingDispatch = nil
+                self:ShowNextOnline()
+            end)
+        end
     end)
     function toast:ApplyOptions()
         if options.popupLocked then finishInteraction() end
         self:SetMovable(not options.popupLocked)
         resize:SetShown(not options.popupLocked)
-        self.preview:SetShown(not options.popupNameOnly)
+        self.preview:SetShown(self.kind ~= "online" and not options.popupNameOnly)
         local path = getStyle()
         local size = bound(options.popupFontSize, 10, 20, 13)
         self.title:SetFont(path, size + 1, "")
@@ -308,6 +393,9 @@ function NS.CreateCombatPreview(getStyle, options)
     end
     function toast:ShowWhisper(author, text)
         self.editing = nil
+        if self.kind == "online" then self.count = 0 end
+        self.kind, self.onlineKey = "whisper", nil
+        self.icon:SetTexture("Interface\\AddOns\\ForeverWhisper\\UI\\WhisperMark.tga")
         self.count, self.serial = self.count + 1, self.serial + 1
         local path, size, t = getStyle()
         self.bg:SetColorTexture(t[2], t[3], t[4], 0.97)
@@ -336,7 +424,8 @@ function NS.CreateCombatPreview(getStyle, options)
         self:SetSize(320, 92)
         self:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -30, -160)
     end
-    function toast:Reset()
+    function toast:Reset(preserveOnline)
+        if not preserveOnline then self.onlineQueue, self.onlinePending = {}, {} end
         if self.timer then self.timer:Cancel(); self.timer = nil end
         self.serial, self.count = self.serial + 1, 0
         self:Hide()

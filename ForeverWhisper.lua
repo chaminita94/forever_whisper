@@ -38,6 +38,7 @@ local defaults = {
     keepChat = false, showMinimap = true, minimapAngle = 225,
     conversations = {}, artwork = true, artBrightness = 0.95, combatPreview = true, typing = true,
     contactSort = "recent", popupDuration = 7, popupFontSize = 13, popupNameOnly = false, popupLocked = false,
+    onlineNotifyMode = "popup",
 }
 
 local fonts = {
@@ -425,7 +426,10 @@ local function refreshWatchedPresence(baseline)
         if c.notifyOnline then
             local online = contactPresence(c.name, c)
             if not baseline and not c.muted and watchedPresence[key] == false and online == true then
-                DEFAULT_CHAT_FRAME:AddMessage("|cff72eadbForever Whisper: " .. contactLabel(c) .. " is now online.|r")
+                if db.onlineNotifyMode == "chat" or db.onlineNotifyMode == "both" then
+                    DEFAULT_CHAT_FRAME:AddMessage("|cff72eadbForever Whisper: " .. contactLabel(c) .. " is now online.|r")
+                end
+                if db.onlineNotifyMode ~= "chat" and combatPreview then combatPreview:QueueOnline(key, contactLabel(c)) end
                 if db.sound and PlaySound then PlaySound(SOUNDKIT and SOUNDKIT.TELL_MESSAGE or 3081) end
             end
             watchedPresence[key] = online
@@ -1268,12 +1272,18 @@ openContactMenu = function(key, owner)
     end
     end -- Character-only friend/ignore/report actions must never target a BattleTag.
     add(c.pinned and "Unpin conversation" or "Pin conversation", function() togglePin(key) end)
-    add(c.muted and "Unmute notifications" or "Mute notifications", function() c.muted = not c.muted or nil end)
+    add(c.muted and "Unmute notifications" or "Mute notifications", function()
+        c.muted = not c.muted or nil
+        if c.muted and combatPreview then combatPreview:DropOnline(key) end
+    end)
     add("Nickname / private note...", function() editContact(key) end)
     add(c.notifyOnline and "Disable online notification" or "Notify when online", function()
         c.notifyOnline = not c.notifyOnline or nil
         if c.notifyOnline then watchedPresence[key] = contactPresence(c.name, c)
-        else watchedPresence[key] = nil end
+        else
+            watchedPresence[key] = nil
+            if combatPreview then combatPreview:DropOnline(key) end
+        end
     end)
     add(c.kind == "bnet" and "Copy name" or "Copy character name", function()
         copyHistory(key)
@@ -1345,9 +1355,7 @@ local function makeWindow()
     end
     window:EnableMouse(true)
     window:SetClampedToScreen(true)
-    window:RegisterForDrag("LeftButton")
-    window:SetScript("OnDragStart", function(self) self:StartMoving() end)
-    window:SetScript("OnDragStop", function(self) self:StopMovingOrSizing(); savePosition() end)
+    NS.AttachCursorDrag(window, savePosition, function() return not inCombat() and not window.sizing end)
     window.background = fill(window, 0.05, 0.07, 0.12, db.opacity)
     local header = surface(window, "BORDER")
     header:SetPoint("TOPLEFT")
@@ -1378,8 +1386,8 @@ local function makeWindow()
     nameTarget:RegisterForClicks("RightButtonUp")
     nameTarget:RegisterForDrag("LeftButton")
     nameTarget:SetScript("OnClick", function(self) if activeView == "chat" and current then openContactMenu(current, self) end end)
-    nameTarget:SetScript("OnDragStart", function() window:StartMoving() end)
-    nameTarget:SetScript("OnDragStop", function() window:StopMovingOrSizing(); savePosition() end)
+    nameTarget:SetScript("OnDragStart", function() window:BeginCursorDrag() end)
+    nameTarget:SetScript("OnDragStop", function() window:EndCursorDrag() end)
     nameTarget:SetScript("OnEnter", function(self)
         if activeView ~= "chat" or not current then return end
         GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
@@ -2023,6 +2031,7 @@ local function makeWindow()
     local function finishResize()
         if not resizing then return end
         resizing = nil
+        window.sizing = nil
         resize:SetScript("OnUpdate", nil)
         db.width = clamp(window:GetWidth(), 700, 1200)
         db.height = clamp(window:GetHeight(), 480, 850)
@@ -2052,11 +2061,13 @@ local function makeWindow()
     resize:SetScript("OnLeave", function() GameTooltip:Hide() end)
     resize:SetScript("OnMouseDown", function(_, mouseButton)
         if mouseButton == "LeftButton" and not inCombat() then
+            window:EndCursorDrag()
             local x, y = GetCursorPosition()
             local left, top = window:GetLeft(), window:GetTop()
             if not left or not top then return end
             resizing = { x = x, y = y, width = window:GetWidth(), height = window:GetHeight(),
                 scale = window:GetEffectiveScale() }
+            window.sizing = true
             local parentScale = UIParent:GetEffectiveScale() / resizing.scale
             resizing.maxWidth = math.max(resizing.width, math.min(1200, UIParent:GetWidth() * parentScale - left))
             resizing.maxHeight = math.max(resizing.height, math.min(850, top))
@@ -2079,6 +2090,7 @@ local function makeWindow()
     resize:SetScript("OnMouseUp", finishResize)
     palette:Hide()
     window:SetScript("OnHide", function()
+        window:EndCursorDrag()
         NS.unreadBoundary, NS.jumpToUnread = nil, nil
         finishResize()
         palette:Hide()
@@ -2259,7 +2271,7 @@ local function makeSettings()
     check(leftChecks, 1, "Show timestamps", "timestamps", refreshTranscript)
     check(leftChecks, 2, "Play sound for whispers", "sound")
     check(leftChecks, 3, "Combat message previews", "combatPreview", function()
-        if not db.combatPreview and combatPreview then combatPreview:Reset() end
+        if not db.combatPreview and combatPreview and combatPreview.kind == "whisper" then combatPreview:Reset(true) end
     end)
     check(rightChecks, 1, "Also show whispers in WoW chat", "keepChat")
     check(rightChecks, 2, "Show minimap button", "showMinimap", refreshMinimap)
@@ -2272,7 +2284,7 @@ local function makeSettings()
         if not settings.popupOptions then
             local panel = CreateFrame("Frame", "ForeverWhisperPopupOptions", settings)
             settings.popupOptions = panel
-            panel:SetSize(360, 290)
+            panel:SetSize(360, 330)
             panel:SetPoint("CENTER", window, "CENTER")
             panel:SetFrameLevel(window:GetFrameLevel() + 66)
             panel:EnableMouse(true)
@@ -2291,6 +2303,13 @@ local function makeSettings()
             checks:SetSize(328, 60)
             panel.nameOnly = check(checks, 1, "Show name only (hide message)", "popupNameOnly", apply)
             panel.locked = check(checks, 2, "Lock position and size", "popupLocked", apply)
+            local modeNames = { popup = "Popup", chat = "Chat", both = "Popup + Chat" }
+            panel.onlineMode = button(panel, "", 328, 26, function()
+                db.onlineNotifyMode = db.onlineNotifyMode == "popup" and "chat" or (db.onlineNotifyMode == "chat" and "both" or "popup")
+                panel.onlineMode:SetText("Online notifications: " .. modeNames[db.onlineNotifyMode])
+            end)
+            panel.onlineMode:SetPoint("TOPLEFT", 16, -230)
+            panel.onlineMode:SetText("Online notifications: " .. (modeNames[db.onlineNotifyMode] or "Popup"))
             local previewButton = button(panel, "Preview / move", 124, 28, function()
                 panel:Hide()
                 if combatPreview then combatPreview:Arrange() end
@@ -2584,6 +2603,7 @@ StaticPopupDialogs["FOREVERWHISPER_DELETE"] = {
         if not db or not db.conversations[key] then return end
         db.conversations[key], drafts[key], replyDrafts[key] = nil, nil, nil
         watchedPresence[key] = nil
+        if combatPreview then combatPreview:DropOnline(key) end
         if contactEditor and contactEditor.key == key then contactEditor:Hide() end
         if messageMenu and messageMenu.key == key then messageMenu:Hide() end
         if searchJump and searchJump.key == key then searchJump = nil end
@@ -2664,6 +2684,10 @@ FW:SetScript("OnEvent", function(_, event, ...)
         makeWindow()
         makeSettings()
         combatPreview = NS.CreateCombatPreview(currentStyle, db)
+        combatPreview.onlineAllowed = function(key)
+            local c = db.conversations[key]
+            return c and c.notifyOnline and not c.muted and db.onlineNotifyMode ~= "chat" and contactPresence(c.name, c) == true
+        end
         social = NS.NewSocial(function(name)
             local key = NS.PeerKey(name)
             for _, c in pairs(db.conversations) do if c.kind ~= "bnet" and NS.PeerKey(c.name) == key then return true end end
@@ -2777,12 +2801,12 @@ FW:SetScript("OnEvent", function(_, event, ...)
         end
     elseif event == "PLAYER_REGEN_DISABLED" then
         if social then social:Stop() end
-        if combatPreview then combatPreview:Reset() end
+        if combatPreview and combatPreview.kind ~= "online" then combatPreview:Reset(true) end
         wasOpenAtCombat = window and window:IsShown() or false
         if window then window:Hide() end
         if settings then settings:Hide() end
     elseif event == "PLAYER_REGEN_ENABLED" then
-        if combatPreview then combatPreview:Reset() end
+        if combatPreview and combatPreview.kind ~= "online" then combatPreview:Reset(true) end
         if queuedInCombat or wasOpenAtCombat then
             if queuedInCombat then
                 local sorted = names()

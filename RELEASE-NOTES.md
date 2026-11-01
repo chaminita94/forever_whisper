@@ -1,43 +1,38 @@
-# Forever Whisper 0.15.0-beta7
+# Forever Whisper 0.15.1
 
-Changes since the last published version, 0.15.0-beta2.
+Official release of the messenger update for Classic Era and Forever.
 
-## Conversations and contacts
+## New in this release
 
-- Add a New messages divider before the first unread incoming message. Opening a pending conversation takes you to that boundary.
-- Preserve your reading position when messages arrive while you are browsing older history. Latest messages takes you to the bottom and clears the unread count.
-- Add local nicknames and private notes. Search by character name, nickname, note, or message text. Notes appear when hovering a contact and are never sent to the other player.
-- Add per-contact Notify when online. It is off by default, can be disabled from the same menu, and alerts on known offline-to-online changes without polling.
-- Add per-contact Mute notifications. Muted conversations retain messages, history, and unread badges while suppressing sounds, combat previews, online alerts, and unsolicited window opening.
-- Add a sidebar sort button: Recent, A-Z, and Online first. Pinned conversations stay first in every mode.
-- Add Delete conversation to character and Battle.net contact menus, with confirmation. This removes its history, pin, unread count, and drafts. A new whisper creates a fresh conversation.
+- Online notifications now share the whisper popup's position, style, duration, and font, with a green online icon.
+- Choose Popup, Chat, or Popup + Chat under Settings > Popup options. Enable Notify when online separately for the contacts you want to follow.
+- Whispers have priority: online alerts wait while a whisper popup is visible. Alerts for contacts who went offline, were muted, were deleted, or had notifications disabled are skipped.
+- Online notifications do not create messages, unread badges, or open conversations.
+- Fix dragging jumps in the main window, title bar, and popup. Movement preserves the grab offset and respects UI scale.
+- Stop dragging when the window is hidden or the mouse is released, and prevent moving and resizing simultaneously.
 
-## Messages and replies
+## Messenger improvements included
 
-- Right-click a message for Copy text or Reply. Copy text opens a selectable field for Ctrl+C.
-- Simplify sent quotes to [Reply to: excerpt] answer, leaving the original sender's name out of the prefix.
-- Shorten long quoted excerpts with ... while preserving the complete original message in history. Older quoted replies remain readable.
+- Incoming messages on the left and your replies on the right, with readable sender labels, timestamps, and date separators.
+- Battle.net conversations alongside character whispers, with stable recipient identities and drafts preserved when sending fails.
+- New messages divider at the unread boundary. Opening a pending chat takes you there; incoming messages preserve your position while reading older history.
+- Right-click messages for Copy text or Reply. Sent replies use [Reply to: excerpt] answer, with long excerpts shortened using ... .
+- Local nicknames and private notes, searchable with names and message history. Notes are visible on hover and are never sent to the other player.
+- Per-contact Mute notifications preserves history and unread counts while suppressing sounds, popups, online alerts, and unsolicited opening.
+- Contact sorting by Recent, A-Z, or Online first, with pinned conversations always first.
+- Delete conversation with confirmation, including its saved history, pin, unread count, and drafts. A new whisper creates a fresh chat.
 
-## Combat popup customization
+## Popup and window customization
 
-- Drag the combat notification to move it and resize it from the bottom-right grip, including during combat.
-- Save popup position and size separately from the main window.
-- Pause automatic dismissal while moving or resizing, then resume the selected duration.
-- Add Settings > Arrange popup for a persistent preview. /fw popup opens it and /fw popup reset restores the default geometry.
-- Add Settings > Popup options: duration from 3 to 30 seconds, text size from 10 to 20, show only the sender's name, and lock position and size.
+- Move and resize combat whisper popups independently from the main chat window, including during combat. Layout saves automatically.
+- Set popup duration from 3 to 30 seconds, text size from 10 to 20, name-only display, and position/size locking.
+- Preview with Settings > Arrange popup or /fw popup; restore default geometry with /fw popup reset.
+- Pause dismissal while moving or resizing, then resume the selected duration.
+- Fix resize jumps, release-time size snapping, window position saving, and the Latest messages button's click area.
 
-## Fixes and polish
+## Presence and privacy
 
-- Fix the main window jumping when starting or finishing a resize. Keep the top-left corner fixed, respect UI scale, and remove the release-time size snap.
-- Save the main window's position consistently after moving and resizing.
-- Make sidebar status icons visible above avatar backgrounds and explicitly label Online, Offline, or Unknown before app/location information.
-- Refresh Battle.net status on friend login/logout events.
-- Apply hidden BattleTag discriminators to existing saved profiles as well as new conversations.
-- Reuse message/divider frames and keep resizing updates active only while dragging.
-
-## Compatibility and beta notes
-
-- Intended for Classic Era and Forever. This remains a beta; recent changes have automated coverage but still need in-game testing on both clients.
-- Character presence depends on the friend/guild information available from Blizzard. Unknown is shown when reliable status is unavailable.
-- Typing indicators require compatible Forever Whisper installations on both sides for character whispers. Battle.net typing and read receipts are not supported.
-- Existing history and settings are retained. Back up SavedVariables before beta testing.
+- Visible Online, Offline, and Unknown sidebar indicators, updated from available friend, guild, and Battle.net events without automatic /who queries or idle polling.
+- Hide BattleTag discriminators in visible contact labels, including existing saved profiles, while retaining full identities internally for routing.
+- Optional character typing indicators between compatible Forever Whisper users. Battle.net typing and read receipts are not supported.
+- Existing settings and chat history are retained.
