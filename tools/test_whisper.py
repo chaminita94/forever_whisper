@@ -82,6 +82,7 @@ function methods:SetTextColor(...) self.textColor={...} end
 function methods:SetTexture(t) self.texture=t end
 function methods:SetTexCoord(...) self.texCoord={...} end
 function methods:SetVertexColor(...) self.vertexColor={...} end
+function methods:SetDesaturated(v) self.desaturated=v end
 function methods:SetHyperlinksEnabled(value) self.hyperlinks=value end
 function methods:GetFrameLevel() return self.level or (self.parent and self.parent:GetFrameLevel()+1 or 1) end
 function methods:SetFrameLevel(n) self.level=n end
@@ -190,14 +191,15 @@ function visibleInput()
     for _,o in ipairs(objects) do if o.kind=="EditBox" and o:IsShown() and o.hint then return o end end
     error("No composer")
 end
-ForeverWhisperDB={schema=2,width=620,height=480,font=5,theme=7,opacity=0.94,
+ForeverWhisperDB={schema=2,identitySchema=1,width=620,height=480,font=5,theme=7,opacity=0.94,
     customActions={
         {label="Ask to group",template="Want to group up, {name}?"},
         {label="Send my location",template="I'm in {zone}."},
         {label="Keep my shortcut",template="A personal custom message"},
     },
     conversations={legacy={name="Legacy",last=1,unread=0,pinned=true,
-        messages={{text="Existing saved history",at=1,outgoing=false}}}}}
+        messages={{text="Existing saved history",at=1,outgoing=false}}},
+        ["bnet:saved#1234"]={kind="bnet",name="Saved#1234",battleTag="Saved#1234",last=0,messages={}}}}
 ''')
 ns = lua.table()
 for name in ("MessengerUI.lua","Social.lua","BattleNet.lua","ForeverWhisper.lua"):
@@ -206,6 +208,8 @@ for name in ("MessengerUI.lua","Social.lua","BattleNet.lua","ForeverWhisper.lua"
     lua.execute(source, "ForeverWhisper", ns)
 lua.execute(r'''
 event("ADDON_LOADED","ForeverWhisper")
+assert(ForeverWhisperDB.identitySchema==2 and ForeverWhisperDB.conversations["bnet:saved#1234"].name=="Saved",
+    "Existing profiles did not migrate private BattleTag labels")
 assert(ForeverWhisperWindow.sendButton and ForeverWhisperCombatPreview and ForeverWhisperMinimapButton,
     "Startup did not complete: composer, combat preview or minimap missing")
 assert(ForeverWhisperMinimapButton:IsShown(),"Default minimap button missing after initialization")
@@ -546,6 +550,20 @@ bnEvent("CHAT_MSG_BN_WHISPER_INFORM","Native outgoing",10)
 assert(ForeverWhisperDB.conversations["bnet:freddy#1111"].messages[1].text=="Native outgoing")
 assert(ForeverWhisperWindow.heading.text=="freddy","Native outgoing did not select BNet conversation")
 local bnChat=ForeverWhisperDB.conversations["bnet:freddy#1111"]
+local function contactRow(key)
+    for _,o in ipairs(objects) do if o.key==key and o.statusDot and o:IsShown() then return o end end
+    error("Missing sidebar contact "..key)
+end
+local bnSidebar=contactRow("bnet:freddy#1111")
+assert(bnSidebar.detail.text:find("Online",1,true) and bnSidebar.detail.text:find("Battle.net",1,true))
+assert(bnSidebar.statusDot.parent==bnSidebar.avatarBackground.parent,
+    "Presence icon must be drawn on the avatar, above its background")
+bnRows[1].gameAccountInfo.isOnline=false
+event("BN_FRIEND_ACCOUNT_OFFLINE",10)
+assert(contactRow("bnet:freddy#1111").detail.text=="Offline  ·  Battle.net")
+bnRows[1].gameAccountInfo.isOnline=true
+event("BN_FRIEND_ACCOUNT_ONLINE",10)
+assert(contactRow("bnet:freddy#1111").detail.text:find("Online",1,true))
 assert(bnChat.kind=="bnet" and not ForeverWhisperDB.conversations["freddy#1111"])
 assert(bnChat.name=="freddy" and bnChat.battleTag=="freddy#1111")
 assert(log.rows[#log.lines].reply.width==48, "Reply target must be readable and clickable")

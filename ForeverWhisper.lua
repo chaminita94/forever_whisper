@@ -414,7 +414,7 @@ local function refreshPresence()
         window.presence:SetTextColor(0.42, 0.90, 0.80)
     elseif status == true then
         window.presence:SetText("Online (" .. source .. ")")
-        if area and area ~= "" then window.presence:SetText((c.kind == "bnet" and "Battle.net  ·  " or "Online  ·  ") .. area) end
+        if area and area ~= "" then window.presence:SetText((c.kind == "bnet" and "Online  ·  Battle.net  ·  " or "Online  ·  ") .. area) end
         window.presence:SetTextColor(0.42, 0.90, 0.64)
     elseif status == false then
         window.presence:SetText("Offline (" .. source .. ")")
@@ -625,10 +625,14 @@ local function refreshContacts()
             local status, source, area = contactPresence(item.data.name, item.data)
             b.statusDot:SetTexture(status == true and "Interface\\FriendsFrame\\StatusIcon-Online"
                 or "Interface\\FriendsFrame\\StatusIcon-Offline")
-            b.statusDot:SetVertexColor(1, status == false and 0.45 or 1, status == false and 0.45 or 1, 1)
-            b.detail:SetText(status == true and ((area and area ~= "") and area or "Online")
-                or (status == false and "Offline" or "Status unavailable"))
-            if item.data.kind == "bnet" then b.detail:SetText("Battle.net  ·  " .. b.detail:GetText()) end
+            if status == nil then b.statusDot:SetDesaturated(true) else b.statusDot:SetDesaturated(false) end
+            b.statusDot:SetVertexColor(1, 1, 1, 1)
+            local detail = status == true and "Online" or (status == false and "Offline" or "Unknown")
+            if item.data.kind == "bnet" then detail = detail .. "  ·  Battle.net" end
+            if status == true and area and area ~= "" then detail = detail .. "  ·  " .. area end
+            b.detail:SetText(detail)
+            if status == true then b.detail:SetTextColor(0.42, 0.90, 0.64)
+            else b.detail:SetTextColor(0.57, 0.68, 0.74) end
             local last = item.data.messages[#item.data.messages]
             local preview = last and ((last.outgoing and "You: " or "") .. last.text) or "Start the conversation"
             if item.data.kind == "bnet" and last then
@@ -1395,7 +1399,7 @@ local function makeWindow()
         b.detail:SetPoint("TOPRIGHT", -9, -23)
         b.detail:SetWordWrap(false)
         b.detail:SetTextColor(0.57, 0.68, 0.74)
-        b.statusDot = b:CreateTexture(nil, "OVERLAY")
+        b.statusDot = avatar:CreateTexture(nil, "OVERLAY")
         b.statusDot:SetPoint("BOTTOMRIGHT", avatar, "BOTTOMRIGHT", 2, -2)
         b.statusDot:SetSize(12, 12)
         b.preview:SetPoint("TOPLEFT", 49, -37)
@@ -2333,9 +2337,9 @@ FW:SetScript("OnEvent", function(_, event, ...)
         db.theme = clamp(db.theme, 1, #themes)
         db.minimapAngle = clamp(db.minimapAngle, 0, 360)
         db.conversations = type(db.conversations) == "table" and db.conversations or {}
-        if db.identitySchema ~= 1 then
+        if db.identitySchema ~= 2 then
             db.conversations = NS.CanonicalConversations(db.conversations)
-            db.identitySchema = 1
+            db.identitySchema = 2
         end
         makeWindow()
         makeSettings()
@@ -2369,6 +2373,8 @@ FW:SetScript("OnEvent", function(_, event, ...)
         FW:RegisterEvent("BN_CONNECTED")
         FW:RegisterEvent("BN_DISCONNECTED")
         FW:RegisterEvent("BN_FRIEND_INFO_CHANGED")
+        FW:RegisterEvent("BN_FRIEND_ACCOUNT_ONLINE")
+        FW:RegisterEvent("BN_FRIEND_ACCOUNT_OFFLINE")
         FW:RegisterEvent("BN_FRIEND_LIST_SIZE_CHANGED")
         FW:UnregisterEvent("ADDON_LOADED")
     elseif event == "PLAYER_ENTERING_WORLD" then
@@ -2380,8 +2386,9 @@ FW:SetScript("OnEvent", function(_, event, ...)
         if IsInGuild and IsInGuild() and C_GuildInfo and C_GuildInfo.GuildRoster then
             C_GuildInfo.GuildRoster()
         end
-        if window and window:IsShown() and activeView == "chat" then refreshPresence() end
-    elseif event == "BN_CONNECTED" or event == "BN_DISCONNECTED" or event == "BN_FRIEND_INFO_CHANGED" or event == "BN_FRIEND_LIST_SIZE_CHANGED" then
+        if window and window:IsShown() and activeView == "chat" then refreshPresence(); refreshContacts() end
+    elseif event == "BN_CONNECTED" or event == "BN_DISCONNECTED" or event == "BN_FRIEND_INFO_CHANGED" or event == "BN_FRIEND_LIST_SIZE_CHANGED"
+        or event == "BN_FRIEND_ACCOUNT_ONLINE" or event == "BN_FRIEND_ACCOUNT_OFFLINE" then
         NS.InvalidateBNet(event == "BN_DISCONNECTED")
         if window and window:IsShown() and activeView == "chat" and not inCombat() then
             refreshPresence()

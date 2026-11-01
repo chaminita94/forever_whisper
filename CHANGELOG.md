@@ -1,3 +1,12 @@
+# Forever Whisper 0.15.0-beta3
+
+## Sidebar presence fixes
+
+- Draw online/offline indicators above the avatar background so they remain visible.
+- Show explicit Online, Offline, or Unknown status before app and location details.
+- Refresh Battle.net presence on friend account login and logout events without polling.
+- Apply hidden BattleTag labels to existing profiles, keeping full identity keys internal.
+
 # Forever Whisper 0.15.0-beta2
 
 ## Privacy and usability fixes
