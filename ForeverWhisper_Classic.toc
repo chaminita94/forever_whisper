@@ -1,5 +1,7 @@
 ## Interface: 11509
 ## Title: Forever Whisper
+## Notes-esES: Susurros en una ventana de mensajería ligera y personalizable
+## Notes-esMX: Susurros en una ventana de mensajería ligera y personalizable
 ## Notes: Messenger-style whispers for WoW Classic Era
 ## Author: Vitaliy (chaminita94)
 ## Version: 0.15.2-local
@@ -7,6 +9,7 @@
 ## IconTexture: Interface\AddOns\ForeverWhisper\UI\WhisperMark.tga
 ## SavedVariables: ForeverWhisperDB
 
+Localization.lua
 MessengerUI.lua
 Social.lua
 BattleNet.lua

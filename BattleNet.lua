@@ -3,7 +3,7 @@ local roster, loaded, disconnected = {}, false, false
 
 -- Keep the discriminator in identity keys, never in visible contact labels.
 function NS.BNetDisplayName(tag)
-    return type(tag) == "string" and (tag:match("^(.-)#%d+$") or tag) or "Battle.net friend"
+    return type(tag) == "string" and (tag:match("^(.-)#%d+$") or tag) or NS.L["Battle.net friend"]
 end
 
 function NS.BNetDisplayMessage(text)
@@ -78,11 +78,11 @@ end
 
 function NS.SendBNet(c, text)
     local record = recipient(c)
-    if not record then return false, "Battle.net recipient unavailable. Your draft was kept." end
+    if not record then return false, NS.L["Battle.net recipient unavailable. Your draft was kept."] end
     local send = C_BattleNet and C_BattleNet.SendWhisper or BNSendWhisper
-    if not send then return false, "Battle.net whispers are unavailable on this client. Your draft was kept." end
+    if not send then return false, NS.L["Battle.net whispers are unavailable on this client. Your draft was kept."] end
     local ok, result = pcall(send, record.id, text)
-    if not ok or result == false then return false, "Battle.net could not send the message. Your draft was kept." end
+    if not ok or result == false then return false, NS.L["Battle.net could not send the message. Your draft was kept."] end
     return true
 end
 
@@ -100,5 +100,5 @@ function NS.InviteBNet(c)
     if not game or not game.isOnline or game.clientProgram ~= "WoW" or not C_BattleNet or not C_BattleNet.InviteFriend then return end
     if WOW_PROJECT_ID and game.wowProjectID and game.wowProjectID ~= WOW_PROJECT_ID then return end
     local ok = pcall(C_BattleNet.InviteFriend, game.gameAccountID)
-    if not ok then DEFAULT_CHAT_FRAME:AddMessage("Forever Whisper: this Battle.net friend cannot be invited here.") end
+    if not ok then DEFAULT_CHAT_FRAME:AddMessage(NS.L["Forever Whisper: this Battle.net friend cannot be invited here."]) end
 end

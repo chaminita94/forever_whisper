@@ -39,7 +39,21 @@ local defaults = {
     conversations = {}, artwork = true, artBrightness = 0.95, combatPreview = true, typing = true,
     contactSort = "recent", popupDuration = 7, popupFontSize = 13, popupNameOnly = false, popupLocked = false,
     onlineNotifyMode = "popup",
+    language = "auto", soundChoice = 1,
 }
+
+NS.AlertSounds = {
+    {"Default whisper", "TELL_MESSAGE", 3081}, {"Ready check", "READY_CHECK", 8960},
+    {"Raid warning", "RAID_WARNING", 8959}, {"Map ping", "MAP_PING", 3175},
+    {"Friend alert", "UI_BNET_TOAST", 18019},
+}
+function NS.PlayAlertSound()
+    if not PlaySound then return end
+    local choice = NS.AlertSounds[tonumber(db.soundChoice) or 1] or NS.AlertSounds[1]
+    local id = SOUNDKIT and SOUNDKIT[choice[2]] or choice[3]
+    local ok, played = pcall(PlaySound, id)
+    if (not ok or played == false) and id ~= 3081 then pcall(PlaySound, 3081) end
+end
 
 local fonts = {
     { "Classic", "Fonts\\FRIZQT__.TTF" },
@@ -52,7 +66,7 @@ local fonts = {
 local themes = {
     { "Slate", 0.055, 0.075, 0.105, 0.65, 0.78, 0.95 },
     { "Arthas", 0.035, 0.075, 0.135, 0.48, 0.77, 1.00 },
-    { "Plum", 0.105, 0.070, 0.13, 0.88, 0.62, 0.92 },
+    { "Minimal", 0.09, 0.10, 0.12, 0.72, 0.77, 0.84 },
     { "Wildwood", 0.055, 0.095, 0.085, 0.40, 0.84, 0.68 },
     { "Doom", 0.13, 0.035, 0.040, 0.98, 0.32, 0.28 },
     { "Graphite", 0.075, 0.083, 0.095, 0.74, 0.79, 0.89 },
@@ -63,7 +77,7 @@ local themes = {
 local themeArtwork = {
     { "IronCorner", false, 0.50 },       -- Slate
     { "FrostCorner", false, 0.60 },      -- Arthas
-    { "SakuraCorner", true, 0.48 },      -- Plum
+    { false, false, 0 },                -- Minimal: no decorative textures
     { "ForestCorner", true, 0.58 },      -- Wildwood
     { "DoomCorner", false, 0.65 },       -- Doom
     { "IronCorner", true, 0.55 },        -- Graphite
@@ -280,7 +294,7 @@ end
 local function renderMapPins(text)
     return (text:gsub("%[Pin: ([^%]\r\n]+)%]%s*{fwmap:(%d+):(%d+):(%d+)}", function(title, map, px, py)
         local id, x, y = tonumber(map), tonumber(px) / 10000, tonumber(py) / 10000
-        if not validPin(id, x, y) then return "[Invalid map pin]" end
+        if not validPin(id, x, y) then return NS.L["[Invalid map pin]"] end
         title = title:gsub("|", "")
         return "|cffffb7d6|Hfwmap:" .. map .. ":" .. px .. ":" .. py .. "|h[Pin: " .. title .. "]|h|r"
     end))
@@ -416,9 +430,9 @@ contactPresence = function(name, c)
     if c and c.kind == "bnet" then return NS.BNetPresence(c) end
     if guildPresenceDirty then rebuildGuildPresence() end
     local status, area = NS.FriendPresence(name)
-    if status ~= nil then return status, "friend", area end
+    if status ~= nil then return status, NS.L["friend"], area end
     local known = guildPresence[normalize(name)]
-    if known ~= nil then return known, "guild" end
+    if known ~= nil then return known, NS.L["guild"] end
 end
 
 local function refreshWatchedPresence(baseline)
@@ -427,10 +441,10 @@ local function refreshWatchedPresence(baseline)
             local online = contactPresence(c.name, c)
             if not baseline and not c.muted and watchedPresence[key] == false and online == true then
                 if db.onlineNotifyMode == "chat" or db.onlineNotifyMode == "both" then
-                    DEFAULT_CHAT_FRAME:AddMessage("|cff72eadbForever Whisper: " .. contactLabel(c) .. " is now online.|r")
+                    DEFAULT_CHAT_FRAME:AddMessage("|cff72eadbForever Whisper: " .. contactLabel(c) .. NS.L[" is now online.|r"])
                 end
                 if db.onlineNotifyMode ~= "chat" and combatPreview then combatPreview:QueueOnline(key, contactLabel(c)) end
-                if db.sound and PlaySound then PlaySound(SOUNDKIT and SOUNDKIT.TELL_MESSAGE or 3081) end
+                if db.sound then NS.PlayAlertSound() end
             end
             watchedPresence[key] = online
         else watchedPresence[key] = nil end
@@ -442,7 +456,7 @@ local function refreshPresence()
     if guildPresenceDirty then rebuildGuildPresence() end
     local c = current and db.conversations[current]
     if not c then
-        window.presence:SetText("Select a conversation")
+        window.presence:SetText(NS.L["Select a conversation"])
         window.presence:SetTextColor(0.58, 0.70, 0.79)
         return
     end
@@ -450,20 +464,20 @@ local function refreshPresence()
     if window.inviteButton then window.inviteButton:SetEnabled(c.kind ~= "bnet" or NS.CanInviteBNet(c)) end
     if window.ignoreButton then
         window.ignoreButton:SetEnabled(c.kind ~= "bnet")
-        window.ignoreButton:SetText(c.kind == "bnet" and "Character ignore only" or "Ignore player...")
+        window.ignoreButton:SetText(c.kind == "bnet" and NS.L["Character ignore only"] or NS.L["Ignore player..."])
     end
     if social and social:IsTyping(c.name) then
-        window.presence:SetText("Typing...")
+        window.presence:SetText(NS.L["Typing..."])
         window.presence:SetTextColor(0.42, 0.90, 0.80)
     elseif status == true then
-        window.presence:SetText("Online (" .. source .. ")")
-        if area and area ~= "" then window.presence:SetText((c.kind == "bnet" and "Online  ·  Battle.net  ·  " or "Online  ·  ") .. area) end
+        window.presence:SetText(NS.L["Online ("] .. source .. ")")
+        if area and area ~= "" then window.presence:SetText((c.kind == "bnet" and NS.L["Online  ·  Battle.net  ·  "] or NS.L["Online  ·  "]) .. area) end
         window.presence:SetTextColor(0.42, 0.90, 0.64)
     elseif status == false then
-        window.presence:SetText("Offline (" .. source .. ")")
+        window.presence:SetText(NS.L["Offline ("] .. source .. ")")
         window.presence:SetTextColor(0.66, 0.72, 0.78)
     else
-        window.presence:SetText(c.kind == "bnet" and "Battle.net status unavailable" or "Status: friends and guild only")
+        window.presence:SetText(c.kind == "bnet" and NS.L["Battle.net status unavailable"] or NS.L["Status: friends and guild only"])
         window.presence:SetTextColor(0.63, 0.73, 0.80)
     end
 end
@@ -505,7 +519,8 @@ local function applyTheme()
     if transcript and transcript.Restyle then transcript:Restyle() end
     local t = themes[db.theme]
     local art = themeArtwork[db.theme]
-    local enabled = db.artwork and art ~= nil
+    local hasArt = art and type(art[1]) == "string"
+    local enabled = db.artwork and hasArt
     if window.artCorner then
         if enabled then
             local path = "Interface\\AddOns\\ForeverWhisper\\UI\\" .. art[1] .. ".tga"
@@ -518,6 +533,11 @@ local function applyTheme()
             window.artSide:SetVertexColor(1, 1, 1, db.artBrightness * 0.90)
             window.artAmbient:SetVertexColor(1, 1, 1, db.artBrightness * 0.30)
             window.artHeader:SetVertexColor(1, 1, 1, db.artBrightness * 0.60)
+        elseif not hasArt then
+            window.artCorner:SetTexture(nil)
+            window.artSide:SetTexture(nil)
+            window.artAmbient:SetTexture(nil)
+            window.artHeader:SetTexture(nil)
         end
         window.artCorner:SetShown(enabled)
         window.artSide:SetShown(enabled and art[2])
@@ -549,6 +569,7 @@ local function applyTheme()
     if actionMenu then actionMenu.bg:SetColorTexture(t[2], t[3], t[4], 1) end
     if newChat then newChat.bg:SetColorTexture(t[2], t[3], t[4], 1) end
     window.accent:SetColorTexture(t[5], t[6], t[7], 1)
+    window.accent:SetShown(hasArt)
     window.heading:SetTextColor(t[5], t[6], t[7])
     for _, b in ipairs(styledButtons) do
         b.bg:SetColorTexture(t[2] * 1.55, t[3] * 1.55, t[4] * 1.55, 0.96)
@@ -573,6 +594,10 @@ local function applyTheme()
         window.sendButton.bg:SetColorTexture(t[5] * 0.42, t[6] * 0.42, t[7] * 0.42, 1)
     end
     if settings and settings.previewText then
+        if settings.artworkChoice then
+            settings.artworkChoice:SetEnabled(hasArt)
+            settings.artworkChoice:SetText(hasArt and (NS.L["Artwork: "] .. (db.artwork and NS.L["On"] or NS.L["Off"])) or NS.L["No artwork"])
+        end
         settings.background:SetColorTexture(t[2] * 0.8, t[3] * 0.8, t[4] * 0.8, db.opacity)
         settings.previewBackground:SetColorTexture(t[2] * 1.45, t[3] * 1.45, t[4] * 1.45, 1)
         for _, background in ipairs(settings.selectorBackgrounds) do
@@ -583,17 +608,22 @@ local function applyTheme()
         if settings.artPreview then
             local p = settings.artPreview
             p.bg:SetColorTexture(t[2] * 0.7, t[3] * 0.7, t[4] * 0.7, 1)
-            p.themeName:SetText(t[1])
-            if p:IsShown() then
+            p.themeName:SetText(NS.L[t[1]])
+            if p:IsShown() and hasArt then
                 p.image:SetTexture("Interface\\AddOns\\ForeverWhisper\\UI\\" .. art[1] .. ".tga")
                 local atmosphere = "Interface\\AddOns\\ForeverWhisper\\UI\\" .. art[1]:gsub("Corner", "Atmosphere") .. ".tga"
                 p.ambient:SetTexture(atmosphere)
                 p.headerArt:SetTexture(atmosphere)
+            elseif not hasArt then
+                p.image:SetTexture(nil); p.ambient:SetTexture(nil); p.headerArt:SetTexture(nil)
             end
+            p.image:SetShown(hasArt); p.ambient:SetShown(hasArt); p.headerArt:SetShown(hasArt)
+            if p.emptyMessage then p.emptyMessage:SetShown(not hasArt) end
+            if p.brightnessRow then p.brightnessRow:SetShown(hasArt) end
             p.image:SetVertexColor(1, 1, 1, db.artBrightness)
             p.ambient:SetVertexColor(1, 1, 1, db.artBrightness * 0.30)
             p.headerArt:SetVertexColor(1, 1, 1, db.artBrightness * 0.60)
-            p.notice:SetText(db.artwork and "Preview updates your chat style" or "Artwork is off in chat; preview only")
+            p.notice:SetText(not hasArt and NS.L["Minimal has no decorative artwork"] or (db.artwork and NS.L["Preview updates your chat style"] or NS.L["Artwork is off in chat; preview only"]))
         end
         for _, thumb in ipairs(settings.sliderThumbs) do thumb:SetColorTexture(t[5], t[6], t[7], 1) end
         for _, marker in ipairs(settings.checkMarkers) do marker:SetColorTexture(t[5], t[6], t[7], 1) end
@@ -621,17 +651,17 @@ local function refreshTranscript(preserveScroll, newMessage)
     local c = current and db.conversations[current]
     if window.empty then window.empty:SetShown(not c or #c.messages == 0) end
     if input and input.hint then
-        input.hint:SetText(c and "Write a message..." or "Select a chat to write a message")
+        input.hint:SetText(c and NS.L["Write a message..."] or NS.L["Select a chat to write a message"])
     end
     if not c then
-        window.heading:SetText(settings and settings:IsShown() and "Preferences" or "Forever Whisper")
+        window.heading:SetText(settings and settings:IsShown() and NS.L["Preferences"] or "Forever Whisper")
         refreshPresence()
-        if window.pinButton then window.pinButton:SetText("Pin") end
+        if window.pinButton then window.pinButton:SetText(NS.L["Pin"]) end
         return
     end
     if not settings or not settings:IsShown() then window.heading:SetText(contactLabel(c)) end
     refreshPresence()
-    if window.pinButton then window.pinButton:SetText(c.pinned and "Unpin" or "Pin") end
+    if window.pinButton then window.pinButton:SetText(c.pinned and NS.L["Unpin"] or NS.L["Pin"]) end
     local previous, dividerIndex
     if NS.unreadBoundary then
         local found
@@ -641,7 +671,7 @@ local function refreshTranscript(preserveScroll, newMessage)
     for i, item in ipairs(c.messages) do
         local stamp = db.timestamps and ("   |cff778899" .. date("%H:%M", item.at) .. "|r") or ""
         local color = item.outgoing and "|cff89cfff" or "|cffffcf83"
-        local speaker = "[" .. (item.outgoing and "You" or contactLabel(c)) .. "]"
+        local speaker = "[" .. (item.outgoing and NS.L["You"] or contactLabel(c)) .. "]"
         local prefix = searchJump and searchJump.key == current and searchJump.index == i
             and "|cff72eadb>> |r" or ""
         local day = date("%d %b", item.at)
@@ -654,7 +684,7 @@ local function refreshTranscript(preserveScroll, newMessage)
         local dateLine = newDay and ("|cff778899" .. day .. "|r\n") or ""
         local body, who, quote = NS.DecodeReply(item.text)
         if who and c.kind == "bnet" then who = NS.BNetDisplayName(who) end
-        local quoted = who and ("|cff7fcbbbReply to:|r\n|cff98aaa9" .. NS.Excerpt(quote) .. "|r\n") or ""
+        local quoted = who and (NS.L["|cff7fcbbbReply to:|r\n|cff98aaa9"] .. NS.Excerpt(quote) .. "|r\n") or ""
         local rendered = NS.URLs(body, function(text) return renderEmoji(renderMapPins(text)) end)
         transcript:AddMessage(dateLine .. heading .. quoted .. prefix .. "|cffd6e1eb  " .. rendered .. "|r", item.outgoing, isNew)
         previous = item
@@ -695,22 +725,22 @@ local function refreshContacts()
                 or "Interface\\FriendsFrame\\StatusIcon-Offline")
             if status == nil then b.statusDot:SetDesaturated(true) else b.statusDot:SetDesaturated(false) end
             b.statusDot:SetVertexColor(1, 1, 1, 1)
-            local detail = status == true and "Online" or (status == false and "Offline" or "Unknown")
+            local detail = status == true and NS.L["Online"] or (status == false and NS.L["Offline"] or NS.L["Unknown"])
             if item.data.kind == "bnet" then detail = detail .. "  ·  Battle.net" end
             if status == true and area and area ~= "" then detail = detail .. "  ·  " .. area end
             b.detail:SetText(detail)
             if status == true then b.detail:SetTextColor(0.42, 0.90, 0.64)
             else b.detail:SetTextColor(0.57, 0.68, 0.74) end
             local last = item.data.messages[#item.data.messages]
-            local preview = last and ((last.outgoing and "You: " or "") .. last.text) or "Start the conversation"
+            local preview = last and ((last.outgoing and NS.L["You: "] or "") .. last.text) or NS.L["Start the conversation"]
             if item.data.kind == "bnet" and last then
-                preview = (last.outgoing and "You: " or "") .. NS.BNetDisplayMessage(last.text)
+                preview = (last.outgoing and NS.L["You: "] or "") .. NS.BNetDisplayMessage(last.text)
             end
             preview = preview:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
                 :gsub("|H.-|h(.-)|h", "%1"):gsub("|T.-|t", "[image]"):gsub("[\r\n]", " ")
-            b.preview:SetText((item.data.pinned and "|cff9ab5cbPIN  |r" or "") .. preview)
+            b.preview:SetText((item.data.pinned and NS.L["|cff9ab5cbPIN  |r"] or "") .. preview)
             if social and social:IsTyping(item.data.name) then
-                b.preview:SetText("|cff70dcccTyping...|r")
+                b.preview:SetText(NS.L["|cff70dcccTyping...|r"])
             end
             b.initial:SetText(string.upper(contactLabel(item.data):match("^.[\128-\191]*") or "?"))
             b.unread:SetText(unread > 99 and "99+" or tostring(unread))
@@ -724,7 +754,7 @@ local function refreshContacts()
         end
     end
     if window.contactCount then
-        local title = db.contactSort == "name" and "A-Z" or (db.contactSort == "online" and "Online" or "Recent")
+        local title = db.contactSort == "name" and "A-Z" or (db.contactSort == "online" and NS.L["Online"] or NS.L["Recent"])
         window.contactCount:SetText(title .. " / " .. #sorted)
     end
 end
@@ -762,7 +792,7 @@ end
 local function openMapPin(mapID, x, y)
     if not validPin(mapID, x, y) then return end
     if C_Map and C_Map.GetMapInfo and not C_Map.GetMapInfo(mapID) then
-        pinNotice("This map is unavailable on your client.")
+        pinNotice(NS.L["This map is unavailable on your client."])
         return
     end
     local pointType = UiMapPoint or UIMapPoint
@@ -799,7 +829,7 @@ local function openMapPin(mapID, x, y)
         icon:SetTexture("Interface\AddOns\ForeverWhisper\Emoji\1f3af.png")
         mapPinMarker:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:SetText(string.format("Shared pin: %.1f, %.1f", self.x * 100, self.y * 100))
+            GameTooltip:SetText(string.format(NS.L["Shared pin: %.1f, %.1f"], self.x * 100, self.y * 100))
             GameTooltip:Show()
         end)
         mapPinMarker:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -843,7 +873,7 @@ local function prepareMapPin(key, activeWaypoint)
         x, y = GetPlayerMapPosition("player")
     end
     if not validPin(mapID, x, y) or (x == 0 and y == 0) then
-        pinNotice(activeWaypoint and "No active map pin to share." or "Coordinates are unavailable here. Try outdoors.")
+        pinNotice(activeWaypoint and NS.L["No active map pin to share."] or NS.L["Coordinates are unavailable here. Try outdoors."])
         return
     end
     -- Native clients can generate a standard clickable worldmap link. Preserve
@@ -881,8 +911,8 @@ local function refreshSearchResults()
         b.result = result
         if result then
             if result.kind == "person" then
-                b.title:SetText("|cff72eadbPERSON|r  " .. result.name)
-                b.preview:SetText("Open conversation  |cff8198a8" .. result.saved .. " saved messages|r")
+                b.title:SetText(NS.L["|cff72eadbPERSON|r  "] .. result.name)
+                b.preview:SetText(NS.L["Open conversation  |cff8198a8"] .. result.saved .. NS.L[" saved messages|r"])
             else
                 b.title:SetText(result.name .. "  |cff8198a8" .. date("%d %b %H:%M", result.at) .. "|r")
                 b.preview:SetText(result.text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))
@@ -898,7 +928,7 @@ local function refreshSearchResults()
         else
             searchView.page:SetText((searchOffset + 1) .. "-" ..
                 math.min(#searchResults, searchOffset + #searchButtons) ..
-                " of " .. #searchResults)
+                NS.L[" of "] .. #searchResults)
         end
     end
 end
@@ -908,7 +938,7 @@ local function performSearch()
     local query = searchInput:GetText():match("^%s*(.-)%s*$")
     searchResults, searchOffset = {}, 0
     if #query < 2 then
-        searchStatus:SetText("Type at least 2 characters, then press Enter.")
+        searchStatus:SetText(NS.L["Type at least 2 characters, then press Enter."])
         refreshSearchResults()
         return
     end
@@ -955,11 +985,11 @@ local function performSearch()
         searchResults[#searchResults + 1] = result
     end
     if peopleCount + messageCount == 0 then
-        searchStatus:SetText("No matching people or saved messages.")
+        searchStatus:SetText(NS.L["No matching people or saved messages."])
     else
-        local summary = peopleCount .. (peopleCount == 1 and " person, " or " people, ") ..
-            messageCount .. (messageCount == 1 and " message" or " messages")
-        if peopleCount + messageCount > 60 then summary = summary .. " (showing 60)" end
+        local summary = peopleCount .. (peopleCount == 1 and NS.L[" person, "] or NS.L[" people, "]) ..
+            messageCount .. (messageCount == 1 and NS.L[" message"] or NS.L[" messages"])
+        if peopleCount + messageCount > 60 then summary = summary .. NS.L[" (showing 60)"] end
         searchStatus:SetText(summary .. ".")
     end
     refreshSearchResults()
@@ -984,8 +1014,8 @@ local function copyHistory(key)
         copyWindow:SetFrameStrata("FULLSCREEN_DIALOG")
         copyWindow:EnableMouse(true)
         fill(copyWindow, 0.09, 0.12, 0.18, 0.99)
-        label(copyWindow, "Select text, then press Ctrl+C", 15, "TOPLEFT", 16, -14)
-        local close = button(copyWindow, "Close", 66, 23, function() copyWindow:Hide() end)
+        label(copyWindow, NS.L["Select text, then press Ctrl+C"], 15, "TOPLEFT", 16, -14)
+        local close = button(copyWindow, NS.L["Close"], 66, 23, function() copyWindow:Hide() end)
         close:SetPoint("TOPRIGHT", -12, -11)
         local scroll = CreateFrame("ScrollFrame", nil, copyWindow)
         scroll:SetPoint("TOPLEFT", 17, -45)
@@ -993,7 +1023,7 @@ local function copyHistory(key)
         local child = CreateFrame("Frame", nil, scroll)
         child:SetWidth(510)
         scroll:SetScrollChild(child)
-        copyBox = CreateFrame("EditBox", nil, child)
+        copyBox = NS.TrackEditBox(CreateFrame("EditBox", nil, child))
         copyBox:SetPoint("TOPLEFT")
         copyBox:SetWidth(510)
         copyBox:SetMultiLine(true)
@@ -1001,6 +1031,7 @@ local function copyHistory(key)
         copyBox:SetFont("Fonts\\ARIALN.TTF", 13, "")
         copyBox:SetTextColor(0.92, 0.94, 1)
         copyBox:SetScript("OnEscapePressed", function() copyWindow:Hide() end)
+        copyWindow:SetScript("OnHide", function() copyBox:ClearFocus() end)
         scroll:EnableMouseWheel(true)
         scroll:SetScript("OnMouseWheel", function(self, delta)
             self:SetVerticalScroll(math.max(0, self:GetVerticalScroll() - delta * 35))
@@ -1011,7 +1042,7 @@ local function copyHistory(key)
     local lines, size = {}, 0
     for _, item in ipairs(c.messages) do
         local line = date("%Y-%m-%d %H:%M", item.at) .. "  " ..
-            (item.outgoing and "You" or c.name) .. ": " .. (c.kind == "bnet" and NS.BNetDisplayMessage(item.text) or item.text)
+            (item.outgoing and NS.L["You"] or c.name) .. ": " .. (c.kind == "bnet" and NS.BNetDisplayMessage(item.text) or item.text)
         -- Chat color/texture codes are not useful in a copied transcript.
         line = line:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
         line = line:gsub("{rt([1-8])}", "[marker %1]")
@@ -1037,16 +1068,16 @@ function NS.CopyURLText(text)
         strip:SetFrameLevel(conversationView:GetFrameLevel() + 12)
         strip:EnableMouse(true)
         strip.bg = fill(strip, 0.08, 0.13, 0.19, 0.99)
-        strip.hint = label(strip, "Link selected - Ctrl+C to copy", 11, "TOPLEFT", 10, -6)
+        strip.hint = label(strip, NS.L["Link selected - Ctrl+C to copy"], 11, "TOPLEFT", 10, -6)
         strip.hint:SetTextColor(0.60, 0.82, 0.95)
-        local close = button(strip, "Close", 48, 20, function() NS.CloseURLCopy() end)
+        local close = button(strip, NS.L["Close"], 48, 20, function() NS.CloseURLCopy() end)
         close:SetPoint("TOPRIGHT", -6, -4)
         strip.scroll = CreateFrame("ScrollFrame", nil, strip)
         strip.scroll:SetPoint("TOPLEFT", 8, -29)
         strip.scroll:SetPoint("BOTTOMRIGHT", -8, 7)
         fill(strip.scroll, 0.035, 0.065, 0.10, 1)
         strip.scroll:EnableMouseWheel(true)
-        strip.box = CreateFrame("EditBox", nil, strip.scroll)
+        strip.box = NS.TrackEditBox(CreateFrame("EditBox", nil, strip.scroll))
         strip.box:SetAutoFocus(false)
         strip.box:SetFont("Fonts\\ARIALN.TTF", 13, "")
         strip.box:SetTextColor(0.88, 0.95, 1)
@@ -1057,6 +1088,12 @@ function NS.CopyURLText(text)
             self:SetVerticalScroll(math.max(0, math.min(strip.box:GetHeight()-self:GetHeight(), self:GetVerticalScroll()-delta*20)))
         end)
         strip.box:SetScript("OnEscapePressed", function() NS.CloseURLCopy() end)
+        strip.box:SetScript("OnKeyDown", function(self, key)
+            self.copyShortcut = key == "C" and IsControlKeyDown and IsControlKeyDown() or nil
+        end)
+        strip.box:SetScript("OnKeyUp", function(self, key)
+            if key == "C" and self.copyShortcut then self.copyShortcut = nil; NS.CloseURLCopy() end
+        end)
         strip:SetScript("OnSizeChanged", function(self)
             strip.box:SetWidth(math.max(160, self:GetWidth()-16))
         end)
@@ -1069,7 +1106,7 @@ function NS.CopyURLText(text)
     local multiple = text:find("\n", 1, true) ~= nil
     strip:SetHeight(multiple and 90 or 60)
     strip.box:SetMultiLine(multiple)
-    strip.hint:SetText(multiple and "Links selected - Ctrl+C to copy all" or "Link selected - Ctrl+C to copy")
+    strip.hint:SetText(multiple and NS.L["Links selected - Ctrl+C to copy all"] or NS.L["Link selected - Ctrl+C to copy"])
     local t = themes[db.theme]
     strip.bg:SetColorTexture(t[2], t[3], t[4], 0.99)
     strip:Show()
@@ -1086,7 +1123,6 @@ end
 
 function NS.CloseURLCopy()
     if window and window.urlCopy then window.urlCopy:Hide() end
-    if input and current and window and window:IsShown() and not inCombat() then input:SetFocus() end
 end
 
 local function editContact(key)
@@ -1100,10 +1136,10 @@ local function editContact(key)
         contactEditor:EnableMouse(true)
         fill(contactEditor, 0.05, 0.08, 0.12, 1)
         contactEditor.title = label(contactEditor, "", 14, "TOPLEFT", 16, -14)
-        label(contactEditor, "Nickname (only you see this)", 11, "TOPLEFT", 16, -44)
-        label(contactEditor, "Private note", 11, "TOPLEFT", 16, -108)
+        label(contactEditor, NS.L["Nickname (only you see this)"], 11, "TOPLEFT", 16, -44)
+        label(contactEditor, NS.L["Private note"], 11, "TOPLEFT", 16, -108)
         local function field(y, max)
-            local box = CreateFrame("EditBox", nil, contactEditor)
+            local box = NS.TrackEditBox(CreateFrame("EditBox", nil, contactEditor))
             box:SetPoint("TOPLEFT", 16, y)
             box:SetSize(328, 32)
             box:SetAutoFocus(false)
@@ -1116,7 +1152,7 @@ local function editContact(key)
         end
         contactEditor.nickname = field(-62, 32)
         contactEditor.note = field(-126, 160)
-        local save = button(contactEditor, "Save details", 110, 28, function()
+        local save = button(contactEditor, NS.L["Save details"], 110, 28, function()
             local target = db.conversations[contactEditor.key]
             if target then
                 local nickname = NS.Excerpt(contactEditor.nickname:GetText(), 96):match("^%s*(.-)%s*$")
@@ -1128,7 +1164,7 @@ local function editContact(key)
             contactEditor:Hide()
         end)
         save:SetPoint("BOTTOMLEFT", 16, 14)
-        local cancel = button(contactEditor, "Cancel", 78, 28, function() contactEditor:Hide() end)
+        local cancel = button(contactEditor, NS.L["Cancel"], 78, 28, function() contactEditor:Hide() end)
         cancel:SetPoint("BOTTOMRIGHT", -16, 14)
         contactEditor:SetScript("OnHide", function()
             contactEditor.nickname:ClearFocus(); contactEditor.note:ClearFocus()
@@ -1156,7 +1192,7 @@ local function openMessageMenu(index, owner)
         messageMenu:SetClampedToScreen(true)
         messageMenu:EnableMouse(true)
         fill(messageMenu, 0.05, 0.08, 0.12, 1)
-        local copy = button(messageMenu, "Copy text", 134, 26, function()
+        local copy = button(messageMenu, NS.L["Copy text"], 134, 26, function()
             local target = db.conversations[messageMenu.key]
             if target then
                 local text = messageMenu.text
@@ -1167,7 +1203,7 @@ local function openMessageMenu(index, owner)
             messageMenu:Hide()
         end)
         copy:SetPoint("TOPLEFT", 8, -8)
-        local reply = button(messageMenu, "Reply", 134, 26, function()
+        local reply = button(messageMenu, NS.L["Reply"], 134, 26, function()
             local target = db.conversations[messageMenu.key]
             if target and current == messageMenu.key then
                 for i, item in ipairs(target.messages) do
@@ -1177,7 +1213,7 @@ local function openMessageMenu(index, owner)
             messageMenu:Hide()
         end)
         reply:SetPoint("TOPLEFT", 8, -42)
-        messageMenu.copyLink = button(messageMenu, "Copy link", 134, 26, function()
+        messageMenu.copyLink = button(messageMenu, NS.L["Copy link"], 134, 26, function()
             if db.conversations[messageMenu.key] then
                 NS.CopyURLText(table.concat(messageMenu.urls, "\n"))
             end
@@ -1191,7 +1227,7 @@ local function openMessageMenu(index, owner)
     local _, urls = NS.URLs((NS.DecodeReply(messageMenu.text)))
     messageMenu.urls = urls
     messageMenu.copyLink:SetShown(#urls > 0)
-    messageMenu.copyLink:SetText(#urls > 1 and "Copy links" or "Copy link")
+    messageMenu.copyLink:SetText(#urls > 1 and NS.L["Copy links"] or NS.L["Copy link"])
     messageMenu:SetHeight(#urls > 0 and 112 or 78)
     messageMenu:ClearAllPoints()
     messageMenu:SetPoint("TOPLEFT", owner, "BOTTOMLEFT", 0, 0)
@@ -1205,7 +1241,7 @@ local function togglePin(key)
         local count = 0
         for _, item in pairs(db.conversations) do if item.pinned then count = count + 1 end end
         if count >= 10 then
-            DEFAULT_CHAT_FRAME:AddMessage("Forever Whisper: you can pin up to 10 chats.")
+            DEFAULT_CHAT_FRAME:AddMessage(NS.L["Forever Whisper: you can pin up to 10 chats."])
             return
         end
     end
@@ -1224,15 +1260,15 @@ local function editCustomActions()
         customEditor.bg = fill(customEditor, 0.055, 0.075, 0.105, 1, true)
         customEditor.fields = {}
         if UISpecialFrames then UISpecialFrames[#UISpecialFrames + 1] = "ForeverWhisperCustomActions" end
-        label(customEditor, "Your right-click shortcuts", 18, "TOPLEFT", 20, -18)
+        label(customEditor, NS.L["Your right-click shortcuts"], 18, "TOPLEFT", 20, -18)
         local close = button(customEditor, "X", 26, 26, function() customEditor:Hide() end)
         close:SetPoint("TOPRIGHT", -12, -12)
-        label(customEditor, "Label", 11, "TOPLEFT", 20, -58)
-        label(customEditor, "Message or /command", 11, "TOPLEFT", 182, -58)
+        label(customEditor, NS.L["Label"], 11, "TOPLEFT", 20, -58)
+        label(customEditor, NS.L["Message or /command"], 11, "TOPLEFT", 182, -58)
         for i = 1, 3 do
             local row = {}
             for column, field in ipairs({ "label", "template" }) do
-                local edit = CreateFrame("EditBox", nil, customEditor)
+                local edit = NS.TrackEditBox(CreateFrame("EditBox", nil, customEditor))
                 edit:SetPoint("TOPLEFT", column == 1 and 20 or 182, -79 - (i - 1) * 44)
                 edit:SetSize(column == 1 and 150 or 348, 32)
                 edit:SetFont(fonts[db.font][2], 12, "")
@@ -1245,9 +1281,9 @@ local function editCustomActions()
             end
             customEditor.fields[i] = row
         end
-        local help = label(customEditor, "Use {name} and {zone}. Messages fill your whisper draft.\n/commands fill WoW chat; press Enter there to run them.\nLeave a row empty to remove it.", 11, "TOPLEFT", 20, -216)
+        local help = label(customEditor, NS.L["Use {name} and {zone}. Messages fill your whisper draft.\n/commands fill WoW chat; press Enter there to run them.\nLeave a row empty to remove it."], 11, "TOPLEFT", 20, -216)
         help:SetTextColor(0.65, 0.76, 0.85)
-        local save = button(customEditor, "Save shortcuts", 126, 30, function()
+        local save = button(customEditor, NS.L["Save shortcuts"], 126, 30, function()
             local actions = {}
             for _, row in ipairs(customEditor.fields) do
                 local name = row.label:GetText():gsub("[\r\n|]", ""):match("^%s*(.-)%s*$")
@@ -1318,23 +1354,23 @@ openContactMenu = function(key, owner)
             if db.conversations[key] and not inCombat() then action() end
         end }
     end
-    add("Whisper", function() selectConversation(key); showView("chat"); input:SetFocus() end)
+    add(NS.L["Whisper"], function() selectConversation(key); showView("chat"); input:SetFocus() end)
     if c.kind == "bnet" then
-        if NS.CanInviteBNet(c) then add("Invite to group", function() NS.InviteBNet(c) end) end
+        if NS.CanInviteBNet(c) then add(NS.L["Invite to group"], function() NS.InviteBNet(c) end) end
     else
-    add("Invite to group", function()
+    add(NS.L["Invite to group"], function()
         if C_PartyInfo and C_PartyInfo.InviteUnit then C_PartyInfo.InviteUnit(c.name)
         elseif InviteUnit then InviteUnit(c.name) end
     end)
     if (C_FriendList and C_FriendList.AddFriend) or AddFriend then
-        add("Add friend", function()
+        add(NS.L["Add friend"], function()
             if C_FriendList and C_FriendList.AddFriend then C_FriendList.AddFriend(c.name)
             elseif AddFriend then AddFriend(c.name) end
         end)
     end
-    add("Ignore player...", function() StaticPopup_Show("FOREVERWHISPER_IGNORE", c.name, nil, c.name) end)
+    add(NS.L["Ignore player..."], function() StaticPopup_Show("FOREVERWHISPER_IGNORE", c.name, nil, c.name) end)
     if UnitPopup_OpenMenu or SetItemRef then
-        add("Report / WoW player menu...", function()
+        add(NS.L["Report / WoW player menu..."], function()
             if UnitPopup_OpenMenu then
                 UnitPopup_OpenMenu("FRIEND", { name = c.name, guid = c.guid, lineID = c.lineID,
                     chatType = "WHISPER", chatTarget = c.name })
@@ -1345,13 +1381,13 @@ openContactMenu = function(key, owner)
         end)
     end
     end -- Character-only friend/ignore/report actions must never target a BattleTag.
-    add(c.pinned and "Unpin conversation" or "Pin conversation", function() togglePin(key) end)
-    add(c.muted and "Unmute notifications" or "Mute notifications", function()
+    add(c.pinned and NS.L["Unpin conversation"] or NS.L["Pin conversation"], function() togglePin(key) end)
+    add(c.muted and NS.L["Unmute notifications"] or NS.L["Mute notifications"], function()
         c.muted = not c.muted or nil
         if c.muted and combatPreview then combatPreview:DropOnline(key) end
     end)
-    add("Nickname / private note...", function() editContact(key) end)
-    add(c.notifyOnline and "Disable online notification" or "Notify when online", function()
+    add(NS.L["Nickname / private note..."], function() editContact(key) end)
+    add(c.notifyOnline and NS.L["Disable online notification"] or NS.L["Notify when online"], function()
         c.notifyOnline = not c.notifyOnline or nil
         if c.notifyOnline then watchedPresence[key] = contactPresence(c.name, c)
         else
@@ -1359,18 +1395,18 @@ openContactMenu = function(key, owner)
             if combatPreview then combatPreview:DropOnline(key) end
         end
     end)
-    add(c.kind == "bnet" and "Copy name" or "Copy character name", function()
+    add(c.kind == "bnet" and NS.L["Copy name"] or NS.L["Copy character name"], function()
         copyHistory(key)
         copyBox:SetText(c.name)
         copyBox:HighlightText()
     end)
-    add("Copy conversation", function() copyHistory(key) end)
-    add("Share my position pin", function() prepareMapPin(key) end)
+    add(NS.L["Copy conversation"], function() copyHistory(key) end)
+    add(NS.L["Share my position pin"], function() prepareMapPin(key) end)
     if C_Map and C_Map.GetUserWaypoint and C_Map.GetUserWaypoint() then
-        add("Share active map pin", function() prepareMapPin(key, true) end)
+        add(NS.L["Share active map pin"], function() prepareMapPin(key, true) end)
     end
-    add("Clear history...", function() StaticPopup_Show("FOREVERWHISPER_CLEAR", c.name, nil, key) end)
-    add("Delete conversation...", function() StaticPopup_Show("FOREVERWHISPER_DELETE", c.name, nil, key) end)
+    add(NS.L["Clear history..."], function() StaticPopup_Show("FOREVERWHISPER_CLEAR", c.name, nil, key) end)
+    add(NS.L["Delete conversation..."], function() StaticPopup_Show("FOREVERWHISPER_DELETE", c.name, nil, key) end)
     for _, item in ipairs(db.customActions) do
         local action = item
         if c.kind ~= "bnet" or action.template:sub(1, 1) ~= "/" then
@@ -1388,7 +1424,7 @@ openContactMenu = function(key, owner)
         end)
         end
     end
-    add("Customize actions...", editCustomActions)
+    add(NS.L["Customize actions..."], editCustomActions)
     contactMenu.title:SetText(contactLabel(c))
     for i, row in ipairs(contactMenu.rows) do
         local entry = entries[i]
@@ -1465,7 +1501,7 @@ local function makeWindow()
     nameTarget:SetScript("OnEnter", function(self)
         if activeView ~= "chat" or not current then return end
         GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-        GameTooltip:SetText("Right-click for player actions")
+        GameTooltip:SetText(NS.L["Right-click for player actions"])
         GameTooltip:Show()
     end)
     nameTarget:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -1474,12 +1510,12 @@ local function makeWindow()
     label(window, "F O R E V E R", 9, "TOPLEFT", 19, -33):SetTextColor(0.52, 0.65, 0.77)
     local close = button(window, "X", 28, 26, function() window:Hide() end)
     close:SetPoint("TOPRIGHT", -14, -12)
-    local settingsButton = button(window, "Settings", 76, 26, function()
+    local settingsButton = button(window, NS.L["Settings"], 76, 26, function()
         showView(activeView == "settings" and "chat" or "settings")
     end)
     settingsButton:SetPoint("TOPRIGHT", close, "TOPLEFT", -8, 0)
     window.settingsButton = settingsButton
-    local searchButton = button(window, "Search", 68, 26, function()
+    local searchButton = button(window, NS.L["Search"], 68, 26, function()
         showView(activeView == "search" and "chat" or "search")
     end)
     searchButton:SetPoint("RIGHT", settingsButton, "LEFT", -8, 0)
@@ -1498,9 +1534,9 @@ local function makeWindow()
     actionDivider:SetPoint("TOPRIGHT", 0, -102)
     actionDivider:SetHeight(1)
     actionDivider:SetColorTexture(0.22, 0.31, 0.37, 0.65)
-    local copyButton = button(conversationView, "Copy", 66, 25, copyHistory)
+    local copyButton = button(conversationView, NS.L["Copy"], 66, 25, copyHistory)
     copyButton:SetPoint("TOPLEFT", CONTENT_LEFT, -66)
-    local inviteButton = button(conversationView, "Invite", 66, 25, function()
+    local inviteButton = button(conversationView, NS.L["Invite"], 66, 25, function()
         local c = current and db.conversations[current]
         if not c then return end
         if c.kind == "bnet" then NS.InviteBNet(c); return end
@@ -1517,23 +1553,23 @@ local function makeWindow()
     actionMenu:SetFrameLevel(conversationView:GetFrameLevel() + 25)
     actionMenu:EnableMouse(true)
     actionMenu.bg = fill(actionMenu, 0.07, 0.08, 0.11, 1, true)
-    local more = button(conversationView, "More ...", 76, 28, function()
+    local more = button(conversationView, NS.L["More ..."], 76, 28, function()
         actionMenu:SetShown(not actionMenu:IsShown())
         palette:Hide()
     end)
     more:SetPoint("TOPRIGHT", -18, -64)
     actionMenu:SetPoint("TOPRIGHT", more, "BOTTOMRIGHT", 0, -5)
-    local ignoreButton = button(actionMenu, "Ignore player...", 160, 30, function()
+    local ignoreButton = button(actionMenu, NS.L["Ignore player..."], 160, 30, function()
         actionMenu:Hide()
         local c = current and db.conversations[current]
         if c and c.kind ~= "bnet" then StaticPopup_Show("FOREVERWHISPER_IGNORE", c.name, nil, c.name) end
     end)
-    local clearButton = button(actionMenu, "Clear history...", 160, 30, function()
+    local clearButton = button(actionMenu, NS.L["Clear history..."], 160, 30, function()
         actionMenu:Hide()
         local c = current and db.conversations[current]
         if c then StaticPopup_Show("FOREVERWHISPER_CLEAR", c.name, nil, current) end
     end)
-    local pinButton = button(conversationView, "Pin", 66, 25, function()
+    local pinButton = button(conversationView, NS.L["Pin"], 66, 25, function()
         if current then togglePin(current) end
     end)
     pinButton:SetPoint("LEFT", inviteButton, "RIGHT", 5, 0)
@@ -1554,7 +1590,7 @@ local function makeWindow()
     sideDivider:SetPoint("BOTTOMRIGHT", -1, 0)
     sideDivider:SetWidth(1)
     sideDivider:SetColorTexture(0.23, 0.34, 0.40, 0.65)
-    local filter = CreateFrame("EditBox", nil, sidebar)
+    local filter = NS.TrackEditBox(CreateFrame("EditBox", nil, sidebar))
     filter:SetPoint("TOPLEFT", 12, -12)
     filter:SetPoint("TOPRIGHT", -12, -12)
     filter:SetHeight(30)
@@ -1562,7 +1598,7 @@ local function makeWindow()
     filter:SetTextInsets(10, 10, 0, 0)
     filter:SetFont(fonts[db.font][2], 12, "")
     window.filterBackground = fill(filter, 0.1, 0.14, 0.19, 1, true)
-    local filterHint = label(filter, "Filter conversations...", 12, "LEFT", 10, 0)
+    local filterHint = label(filter, NS.L["Filter conversations..."], 12, "LEFT", 10, 0)
     filterHint:SetTextColor(0.53, 0.64, 0.74)
     filter:SetScript("OnTextChanged", function(self)
         contactQuery = string.lower(self:GetText())
@@ -1572,7 +1608,7 @@ local function makeWindow()
     end)
     filter:SetScript("OnEscapePressed", function(self) self:SetText(""); self:ClearFocus() end)
     window.contactFilter = filter
-    window.contactCount = button(sidebar, "Recent", 124, 24, function()
+    window.contactCount = button(sidebar, NS.L["Recent"], 124, 24, function()
         db.contactSort = db.contactSort == "recent" and "name" or (db.contactSort == "name" and "online" or "recent")
         contactOffset = 0
         refreshContacts()
@@ -1580,8 +1616,8 @@ local function makeWindow()
     window.contactCount:SetPoint("TOPLEFT", 12, -49)
     window.contactCount:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:AddLine("Sort: Recent / A-Z / Online first")
-        GameTooltip:AddLine("Pinned conversations stay first", 0.7, 0.8, 0.9)
+        GameTooltip:AddLine(NS.L["Sort: Recent / A-Z / Online first"])
+        GameTooltip:AddLine(NS.L["Pinned conversations stay first"], 0.7, 0.8, 0.9)
         GameTooltip:Show()
     end)
     window.contactCount:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -1591,8 +1627,8 @@ local function makeWindow()
     newChat:SetFrameLevel(sidebar:GetFrameLevel() + 24)
     newChat:EnableMouse(true)
     newChat.bg = fill(newChat, 0.07, 0.08, 0.11, 1, true)
-    label(newChat, "NEW CONVERSATION", 11, "TOPLEFT", 12, -12)
-    local player = CreateFrame("EditBox", nil, newChat)
+    label(newChat, NS.L["NEW CONVERSATION"], 11, "TOPLEFT", 12, -12)
+    local player = NS.TrackEditBox(CreateFrame("EditBox", nil, newChat))
     player:SetPoint("TOPLEFT", 12, -36)
     player:SetSize(180, 28)
     player:SetAutoFocus(false)
@@ -1600,7 +1636,7 @@ local function makeWindow()
     player:SetTextInsets(8, 8, 0, 0)
     player:SetFont(fonts[db.font][2], 13, "")
     fill(player, 0.14, 0.18, 0.23, 1)
-    local nameHint = label(player, "Name-Realm or BattleTag", 11, "LEFT", 8, 0)
+    local nameHint = label(player, NS.L["Name-Realm or BattleTag"], 11, "LEFT", 8, 0)
     nameHint:SetTextColor(0.58, 0.68, 0.78)
     player:SetScript("OnTextChanged", function(self) nameHint:SetShown(self:GetText() == "") end)
     local function openChat()
@@ -1608,7 +1644,7 @@ local function makeWindow()
         if name == "" or inCombat() then return end
         local key = conversation(name)
         if not key then
-            DEFAULT_CHAT_FRAME:AddMessage("Forever Whisper: Battle.net friend unavailable. Start a whisper from WoW's friends list first.")
+            DEFAULT_CHAT_FRAME:AddMessage(NS.L["Forever Whisper: Battle.net friend unavailable. Start a whisper from WoW's friends list first."])
             return
         end
         filter:SetText("")
@@ -1620,10 +1656,10 @@ local function makeWindow()
     end
     player:SetScript("OnEnterPressed", openChat)
     player:SetScript("OnEscapePressed", function(self) self:ClearFocus(); newChat:Hide() end)
-    local open = button(newChat, "Open chat", 180, 30, openChat)
+    local open = button(newChat, NS.L["Open chat"], 180, 30, openChat)
     open:SetPoint("BOTTOMLEFT", 12, 12)
     newChat:SetScript("OnHide", function() player:ClearFocus() end)
-    local add = button(sidebar, "+ New", 62, 26, function()
+    local add = button(sidebar, NS.L["+ New"], 62, 26, function()
         newChat:SetShown(not newChat:IsShown())
         if newChat:IsShown() then player:SetText(""); player:SetFocus() end
     end)
@@ -1655,7 +1691,7 @@ local function makeWindow()
                 GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                 GameTooltip:AddLine(c.name)
                 if c.note then GameTooltip:AddLine(c.note, 0.75, 0.83, 0.90, true) end
-                if c.notifyOnline then GameTooltip:AddLine("Online notification enabled", 0.45, 0.90, 0.70) end
+                if c.notifyOnline then GameTooltip:AddLine(NS.L["Online notification enabled"], 0.45, 0.90, 0.70) end
                 GameTooltip:Show()
             end
         end)
@@ -1755,10 +1791,10 @@ local function makeWindow()
         actionMenu:Hide()
     end)
     transcript.onMessageMenu = function(_, index, owner) openMessageMenu(index, owner) end
-    window.empty = label(conversationView, "A little closer to your people.\n\nChoose a chat on the left, or click + New.", 15, "CENTER", 95, 12)
+    window.empty = label(conversationView, NS.L["A little closer to your people.\n\nChoose a chat on the left, or click + New."], 15, "CENTER", 95, 12)
     window.empty:SetJustifyH("CENTER")
     window.empty:SetTextColor(0.57, 0.69, 0.79)
-    window.latest = button(conversationView, "Latest messages", 132, 26, function()
+    window.latest = button(conversationView, NS.L["Latest messages"], 132, 26, function()
         transcript:ScrollToBottom()
         if current and db.conversations[current] then db.conversations[current].unread = 0 end
         refreshContacts(); refreshMinimap()
@@ -1803,7 +1839,7 @@ local function makeWindow()
         end
         replyBar:SetShown(reply ~= nil)
         if reply then
-            replyBar.title:SetText("Replying to " .. reply.who)
+            replyBar.title:SetText(NS.L["Replying to "] .. reply.who)
             replyBar.quote:SetText(reply.quote)
         end
         transcript:ClearAllPoints()
@@ -1818,19 +1854,19 @@ local function makeWindow()
         local c = current and db.conversations[current]
         local message = c and c.messages[index]
         if not message or inCombat() then return end
-        local who = message.outgoing and ((UnitName and UnitName("player")) or "You") or c.name
+        local who = message.outgoing and ((UnitName and UnitName("player")) or NS.L["You"]) or c.name
         local body = NS.DecodeReply(message.text)
         replyDrafts[current] = { who = NS.Excerpt(who, 40), quote = NS.Excerpt(body, 48) }
         updateReplyPreview()
         if input then input:SetFocus() end
     end
-    input = CreateFrame("EditBox", nil, compose)
+    input = NS.TrackEditBox(CreateFrame("EditBox", nil, compose))
     input:SetPoint("TOPLEFT", 12, 0)
     input:SetPoint("BOTTOMRIGHT", -10, 0)
     input:SetAutoFocus(false)
     input:SetFont(fonts[db.font][2], db.fontSize + 1, "")
     input:SetTextColor(0.95, 0.97, 1)
-    input.hint = label(compose, "Write a message...", db.fontSize + 1, "LEFT", 12, 0)
+    input.hint = label(compose, NS.L["Write a message..."], db.fontSize + 1, "LEFT", 12, 0)
     input.hint:SetTextColor(0.54, 0.65, 0.72)
     window.composeLine = compose:CreateTexture(nil, "BORDER")
     window.composeLine:SetPoint("BOTTOMLEFT")
@@ -1844,7 +1880,7 @@ local function makeWindow()
     end)
     window.byteCount = label(conversationView, "", 10, "BOTTOMRIGHT", -26, 6)
     window.byteCount:SetTextColor(0.5, 0.62, 0.72)
-    label(conversationView, "ENTER  Send    /    ESC  Release keyboard", 10, "BOTTOMLEFT", CONTENT_LEFT, 6)
+    label(conversationView, NS.L["ENTER  Send    /    ESC  Release keyboard"], 10, "BOTTOMLEFT", CONTENT_LEFT, 6)
         :SetTextColor(0.5, 0.62, 0.72)
     input:SetScript("OnTextChanged", function(self, userInput)
         local text = self:GetText()
@@ -1870,7 +1906,7 @@ local function makeWindow()
         if message == "" then return end
         message = replyPayload(message)
         if #message > 255 then
-            DEFAULT_CHAT_FRAME:AddMessage("|cffff8080Forever Whisper: message is too long.|r")
+            DEFAULT_CHAT_FRAME:AddMessage(NS.L["|cffff8080Forever Whisper: message is too long.|r"])
             return
         end
         if c.kind == "bnet" then
@@ -1885,7 +1921,7 @@ local function makeWindow()
         input:SetFocus()
     end
     input:SetScript("OnEnterPressed", send)
-    local sendButton = button(conversationView, "Send", 62, 44, send)
+    local sendButton = button(conversationView, NS.L["Send"], 62, 44, send)
     sendButton:SetPoint("BOTTOMRIGHT", -25, 20)
     window.sendButton = sendButton
     local emoteButton = button(conversationView, "", 50, 44, function()
@@ -1907,10 +1943,10 @@ local function makeWindow()
     palette:EnableMouse(true)
     palette:SetClampedToScreen(true)
     window.paletteBackground = fill(palette, 0.10, 0.15, 0.20, 1, true)
-    label(palette, "Emoji & reactions", 16, "TOPLEFT", 14, -13):SetTextColor(0.91, 0.95, 1)
+    label(palette, NS.L["Emoji & reactions"], 16, "TOPLEFT", 14, -13):SetTextColor(0.91, 0.95, 1)
     local paletteClose = button(palette, "X", 26, 26, function() palette:Hide() end)
     paletteClose:SetPoint("TOPRIGHT", -10, -9)
-    local emojiSearch = CreateFrame("EditBox", nil, palette)
+    local emojiSearch = NS.TrackEditBox(CreateFrame("EditBox", nil, palette))
     emojiSearch:SetPoint("TOPLEFT", 14, -44)
     emojiSearch:SetPoint("TOPRIGHT", -14, -44)
     emojiSearch:SetHeight(30)
@@ -1919,7 +1955,7 @@ local function makeWindow()
     emojiSearch:SetTextInsets(10, 10, 0, 0)
     emojiSearch:SetFont(fonts[db.font][2], 12, "")
     fill(emojiSearch, 0.13, 0.17, 0.23, 1)
-    local emojiHint = label(emojiSearch, "Search: happy, skull, gg...", 12, "LEFT", 10, 0)
+    local emojiHint = label(emojiSearch, NS.L["Search: happy, skull, gg..."], 12, "LEFT", 10, 0)
     emojiHint:SetTextColor(0.57, 0.67, 0.77)
     local category, page, matches, slots, tabs = "All", 0, {}, {}, {}
     local paletteStatus = label(palette, "", 10, "BOTTOMLEFT", 14, 18)
@@ -1937,7 +1973,7 @@ local function makeWindow()
         for _, entry in ipairs(candidates) do
             -- A search spans all categories, so there are no hidden matches.
             if query ~= "" or category == "All" or category == "Recent" or entry[4] == category then
-                local searchable = string.lower(entry[1] .. " " .. entry[3] .. " " .. entry[4])
+                local searchable = string.lower(entry[1] .. " " .. entry[3] .. " " .. NS.L[entry[3]] .. " " .. entry[4] .. " " .. NS.L[entry[4]])
                 if query == "" or string.find(searchable, query, 1, true) then matches[#matches + 1] = entry end
             end
         end
@@ -1951,11 +1987,12 @@ local function makeWindow()
         for name, tab in pairs(tabs) do
             tab.marker:SetShown(query == "" and name == category)
         end
-        paletteStatus:SetText(#matches == 0 and "No matches" or
-            (#matches .. " emojis  /  " .. (page + 1) .. " of " .. math.max(1, math.ceil(#matches / 28))))
+        paletteStatus:SetText(#matches == 0 and NS.L["No matches"] or
+            (#matches .. NS.L[" emojis  /  "] .. (page + 1) .. NS.L[" of "] .. math.max(1, math.ceil(#matches / 28))))
     end
     for i, name in ipairs({ "All", "Faces", "Hands", "Hearts", "Game", "Memes", "Recent" }) do
-        local tab = button(palette, name, 46, 27, function()
+        local caption = NS.language == "es" and (name == "Hearts" or name == "Recent") and NS.L[name .. " short"] or NS.L[name]
+        local tab = button(palette, caption, 46, 27, function()
             category, page = name, 0
             emojiSearch:SetText("")
             refreshPalette()
@@ -1985,9 +2022,9 @@ local function makeWindow()
             if not self.entry then return end
             hover:Show()
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:SetText(self.entry[3])
+            GameTooltip:SetText(NS.L[self.entry[3]])
             GameTooltip:AddLine(":" .. self.entry[1] .. ":", 0.60, 0.80, 1)
-            GameTooltip:AddLine("Shift-click to keep the picker open", 0.65, 0.72, 0.80)
+            GameTooltip:AddLine(NS.L["Shift-click to keep the picker open"], 0.65, 0.72, 0.80)
             GameTooltip:Show()
         end)
         b:SetScript("OnLeave", function() hover:Hide(); GameTooltip:Hide() end)
@@ -2030,16 +2067,16 @@ local function makeWindow()
     searchField:SetPoint("TOPRIGHT", -113, -23)
     searchField:SetHeight(36)
     window.searchFieldBackground = fill(searchField, 0.12, 0.17, 0.23, 1, true)
-    searchInput = CreateFrame("EditBox", nil, searchField)
+    searchInput = NS.TrackEditBox(CreateFrame("EditBox", nil, searchField))
     searchInput:SetPoint("TOPLEFT", 11, 0)
     searchInput:SetPoint("BOTTOMRIGHT", -8, 0)
     searchInput:SetAutoFocus(false)
     searchInput:SetFont("Fonts\\ARIALN.TTF", 14, "")
     searchInput:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     searchInput:SetScript("OnEnterPressed", performSearch)
-    local findButton = button(searchView, "Find", 76, 36, performSearch)
+    local findButton = button(searchView, NS.L["Find"], 76, 36, performSearch)
     findButton:SetPoint("TOPRIGHT", -25, -23)
-    searchStatus = label(searchView, "Search people or saved messages. Press Enter to find matches.",
+    searchStatus = label(searchView, NS.L["Search people or saved messages. Press Enter to find matches."],
         12, "TOPLEFT", 27, -72)
     searchStatus:SetTextColor(0.60, 0.74, 0.83)
     for i = 1, 6 do
@@ -2102,12 +2139,12 @@ local function makeWindow()
         searchOffset = searchOffset - delta * 3
         refreshSearchResults()
     end)
-    local previous = button(searchView, "Previous", 82, 24, function()
+    local previous = button(searchView, NS.L["Previous"], 82, 24, function()
         searchOffset = searchOffset - #searchButtons
         refreshSearchResults()
     end)
     previous:SetPoint("BOTTOMLEFT", 25, 15)
-    local nextPage = button(searchView, "Next", 62, 24, function()
+    local nextPage = button(searchView, NS.L["Next"], 62, 24, function()
         searchOffset = searchOffset + #searchButtons
         refreshSearchResults()
     end)
@@ -2143,7 +2180,7 @@ local function makeWindow()
     resize:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
     resize:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:AddLine("Drag to resize", 1, 1, 1)
+        GameTooltip:AddLine(NS.L["Drag to resize"], 1, 1, 1)
         GameTooltip:Show()
     end)
     resize:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -2208,8 +2245,8 @@ local function makeSettings()
     settings:EnableMouse(true)
     settings.sliderThumbs, settings.checkMarkers = {}, {}
     settings.background = fill(settings, 0.075, 0.105, 0.145, 0.99)
-    label(settings, "LOOK & FEEL", 11, "TOPLEFT", 26, -18):SetTextColor(0.60, 0.77, 0.86)
-    label(settings, "Drag the bottom-right corner to resize", 11, "TOPRIGHT", -26, -18)
+    label(settings, NS.L["LOOK & FEEL"], 11, "TOPLEFT", 26, -18):SetTextColor(0.60, 0.77, 0.86)
+    label(settings, NS.L["Drag the bottom-right corner to resize"], 11, "TOPRIGHT", -26, -18)
         :SetTextColor(0.55, 0.68, 0.76)
     local left = CreateFrame("Frame", nil, settings)
     left:SetPoint("TOPLEFT", 26, -42)
@@ -2263,24 +2300,24 @@ local function makeSettings()
         value:SetText(formatValue(db[field]))
         return s
     end
-    settings.widthSlider = slider(left, 1, "Width", "width", 700, 1200, 10,
+    settings.widthSlider = slider(left, 1, NS.L["Width"], "width", 700, 1200, 10,
         function() window:SetWidth(db.width) end)
-    settings.heightSlider = slider(left, 2, "Height", "height", 480, 850, 10, function()
+    settings.heightSlider = slider(left, 2, NS.L["Height"], "height", 480, 850, 10, function()
         window:SetHeight(db.height)
         refreshContacts()
     end)
-    slider(left, 3, "Window scale", "scale", 0.7, 1.4, 0.05,
+    slider(left, 3, NS.L["Window scale"], "scale", 0.7, 1.4, 0.05,
         function() window:SetScale(db.scale) end)
-    slider(right, 1, "Text size", "fontSize", 10, 20, 1,
+    slider(right, 1, NS.L["Text size"], "fontSize", 10, 20, 1,
         function() applyFont(); refreshTranscript() end)
-    slider(right, 2, "Opacity", "opacity", 0.2, 1, 0.05, applyTheme)
-    slider(right, 3, "History per person", "historyLimit", 20, 200, 10, function()
+    slider(right, 2, NS.L["Opacity"], "opacity", 0.2, 1, 0.05, applyTheme)
+    slider(right, 3, NS.L["History per person"], "historyLimit", 20, 200, 10, function()
         for _, c in pairs(db.conversations) do
             while #c.messages > db.historyLimit do table.remove(c.messages, 1) end
         end
         refreshTranscript()
     end)
-    label(settings, "CHOOSE A STYLE", 11, "TOPLEFT", 26, -211)
+    label(settings, NS.L["CHOOSE A STYLE"], 11, "TOPLEFT", 26, -211)
         :SetTextColor(0.60, 0.77, 0.86)
     settings.selectorBackgrounds = {}
     local function selector(parent, field, choices, title, apply)
@@ -2294,21 +2331,21 @@ local function makeSettings()
         value:SetJustifyH("CENTER")
         local function change(delta)
             db[field] = (db[field] - 1 + delta + #choices) % #choices + 1
-            value:SetText(title .. ": " .. choices[db[field]][1])
+            value:SetText(title .. ": " .. NS.L[choices[db[field]][1]])
             apply()
         end
         local previous = button(box, "<", 28, 27, function() change(-1) end)
         previous:SetPoint("LEFT", 2, 0)
         local nextChoice = button(box, ">", 28, 27, function() change(1) end)
         nextChoice:SetPoint("RIGHT", -2, 0)
-        value:SetText(title .. ": " .. choices[db[field]][1])
+        value:SetText(title .. ": " .. NS.L[choices[db[field]][1]])
         return function(delta) change(delta) end
     end
     local fontChoice = CreateFrame("Frame", nil, settings)
     fontChoice:SetPoint("TOPLEFT", 26, -233)
     fontChoice:SetPoint("TOPRIGHT", settings, "TOP", -9, -233)
     fontChoice:SetHeight(31)
-    selector(fontChoice, "font", fonts, "Font", function()
+    selector(fontChoice, "font", fonts, NS.L["Font"], function()
         applyFont()
         refreshTranscript()
     end)
@@ -2316,10 +2353,51 @@ local function makeSettings()
     themeChoice:SetPoint("TOPLEFT", settings, "TOP", 9, -233)
     themeChoice:SetPoint("TOPRIGHT", -26, -233)
     themeChoice:SetHeight(31)
-    local changeTheme = selector(themeChoice, "theme", themes, "Theme", applyTheme)
-    label(settings, "BEHAVIOR", 11, "TOPLEFT", 26, -286)
-        :SetTextColor(0.60, 0.77, 0.86)
-    local arrangePopup = button(settings, "Arrange popup", 120, 23, function()
+    local changeTheme = selector(themeChoice, "theme", themes, NS.L["Theme"], applyTheme)
+    local generalButton = button(settings, NS.L["Sound / language"], 150, 23, function()
+        if settings.popupOptions then settings.popupOptions:Hide() end
+        if not settings.generalOptions then
+            local panel = CreateFrame("Frame", "ForeverWhisperGeneralOptions", settings)
+            settings.generalOptions = panel
+            panel:SetSize(400, 218)
+            panel:SetPoint("CENTER", window, "CENTER")
+            panel:SetFrameLevel(window:GetFrameLevel() + 66)
+            panel:EnableMouse(true)
+            fill(panel, 0.05, 0.08, 0.12, 1)
+            label(panel, NS.L["Sound and language"], 15, "TOPLEFT", 16, -14)
+            local function soundCaption()
+                local entry = NS.AlertSounds[tonumber(db.soundChoice) or 1] or NS.AlertSounds[1]
+                panel.soundChoice:SetText(NS.L["Whisper sound"] .. ": " .. NS.L[entry[1]])
+            end
+            panel.soundChoice = button(panel, "", 280, 28, function()
+                db.soundChoice = (tonumber(db.soundChoice) or 1) % #NS.AlertSounds + 1
+                soundCaption()
+            end)
+            panel.soundChoice:SetPoint("TOPLEFT", 16, -48)
+            soundCaption()
+            local listen = button(panel, NS.L["Listen"], 80, 28, NS.PlayAlertSound)
+            listen:SetPoint("TOPRIGHT", -16, -48)
+            local function languageCaption()
+                local name = db.language == "es" and "Español" or (db.language == "en" and "English" or NS.L["Automatic"])
+                panel.languageChoice:SetText(NS.L["Language"] .. ": " .. name)
+            end
+            panel.languageChoice = button(panel, "", 240, 28, function()
+                db.language = db.language == "auto" and "es" or (db.language == "es" and "en" or "auto")
+                languageCaption()
+            end)
+            panel.languageChoice:SetPoint("TOPLEFT", 16, -92)
+            languageCaption()
+            local reload = button(panel, NS.L["Reload UI"], 120, 28, function() if ReloadUI then ReloadUI() end end)
+            reload:SetPoint("TOPRIGHT", -16, -92)
+            label(panel, NS.L["Applies after reloading the interface"], 11, "TOPLEFT", 16, -132)
+            local close = button(panel, NS.L["Done"], 72, 28, function() panel:Hide() end)
+            close:SetPoint("BOTTOMRIGHT", -16, 16)
+            if UISpecialFrames then UISpecialFrames[#UISpecialFrames + 1] = "ForeverWhisperGeneralOptions" end
+        end
+        settings.generalOptions:Show()
+    end)
+    generalButton:SetPoint("TOPLEFT", 26, -278)
+    local arrangePopup = button(settings, NS.L["Arrange popup"], 120, 23, function()
         if combatPreview then combatPreview:Arrange() end
     end)
     arrangePopup:SetPoint("TOPRIGHT", -154, -278)
@@ -2357,19 +2435,20 @@ local function makeSettings()
     rightChecks:SetPoint("TOPLEFT", settings, "TOP", 9, -308)
     rightChecks:SetPoint("TOPRIGHT", -26, -308)
     rightChecks:SetHeight(61)
-    check(leftChecks, 1, "Show timestamps", "timestamps", refreshTranscript)
-    check(leftChecks, 2, "Play sound for whispers", "sound")
-    check(leftChecks, 3, "Combat message previews", "combatPreview", function()
+    check(leftChecks, 1, NS.L["Show timestamps"], "timestamps", refreshTranscript)
+    check(leftChecks, 2, NS.L["Play sound for whispers"], "sound")
+    check(leftChecks, 3, NS.L["Combat message previews"], "combatPreview", function()
         if not db.combatPreview and combatPreview and combatPreview.kind == "whisper" then combatPreview:Reset(true) end
     end)
-    check(rightChecks, 1, "Also show whispers in WoW chat", "keepChat")
-    check(rightChecks, 2, "Show minimap button", "showMinimap", refreshMinimap)
-    check(rightChecks, 3, "Share typing indicators", "typing", function()
+    check(rightChecks, 1, NS.L["Also show whispers in WoW chat"], "keepChat")
+    check(rightChecks, 2, NS.L["Show minimap button"], "showMinimap", refreshMinimap)
+    check(rightChecks, 3, NS.L["Share typing indicators"], "typing", function()
         if social and not db.typing then social:Disable() end
         refreshContacts()
         refreshPresence()
     end)
-    local popupOptions = button(settings, "Popup options", 120, 23, function()
+    local popupOptions = button(settings, NS.L["Popup options"], 120, 23, function()
+        if settings.generalOptions then settings.generalOptions:Hide() end
         if not settings.popupOptions then
             local panel = CreateFrame("Frame", "ForeverWhisperPopupOptions", settings)
             settings.popupOptions = panel
@@ -2378,33 +2457,33 @@ local function makeSettings()
             panel:SetFrameLevel(window:GetFrameLevel() + 66)
             panel:EnableMouse(true)
             fill(panel, 0.05, 0.08, 0.12, 1)
-            label(panel, "Combat popup", 15, "TOPLEFT", 16, -14)
+            label(panel, NS.L["Combat popup"], 15, "TOPLEFT", 16, -14)
             local fields = CreateFrame("Frame", nil, panel)
             fields:SetPoint("TOPLEFT", 16, -48)
             fields:SetSize(328, 110)
             local function apply()
                 if combatPreview then combatPreview:ApplyOptions(); combatPreview:ArmTimer() end
             end
-            panel.durationSlider = slider(fields, 1, "Duration (seconds)", "popupDuration", 3, 30, 1, apply)
-            panel.fontSlider = slider(fields, 2, "Text size", "popupFontSize", 10, 20, 1, apply)
+            panel.durationSlider = slider(fields, 1, NS.L["Duration (seconds)"], "popupDuration", 3, 30, 1, apply)
+            panel.fontSlider = slider(fields, 2, NS.L["Text size"], "popupFontSize", 10, 20, 1, apply)
             local checks = CreateFrame("Frame", nil, panel)
             checks:SetPoint("TOPLEFT", 16, -170)
             checks:SetSize(328, 60)
-            panel.nameOnly = check(checks, 1, "Show name only (hide message)", "popupNameOnly", apply)
-            panel.locked = check(checks, 2, "Lock position and size", "popupLocked", apply)
-            local modeNames = { popup = "Popup", chat = "Chat", both = "Popup + Chat" }
+            panel.nameOnly = check(checks, 1, NS.L["Show name only (hide message)"], "popupNameOnly", apply)
+            panel.locked = check(checks, 2, NS.L["Lock position and size"], "popupLocked", apply)
+            local modeNames = { popup = NS.L["Popup"], chat = NS.L["Chat"], both = NS.L["Popup + Chat"] }
             panel.onlineMode = button(panel, "", 328, 26, function()
                 db.onlineNotifyMode = db.onlineNotifyMode == "popup" and "chat" or (db.onlineNotifyMode == "chat" and "both" or "popup")
-                panel.onlineMode:SetText("Online notifications: " .. modeNames[db.onlineNotifyMode])
+                panel.onlineMode:SetText(NS.L["Online notifications: "] .. modeNames[db.onlineNotifyMode])
             end)
             panel.onlineMode:SetPoint("TOPLEFT", 16, -230)
-            panel.onlineMode:SetText("Online notifications: " .. (modeNames[db.onlineNotifyMode] or "Popup"))
-            local previewButton = button(panel, "Preview / move", 124, 28, function()
+            panel.onlineMode:SetText(NS.L["Online notifications: "] .. (modeNames[db.onlineNotifyMode] or NS.L["Popup"]))
+            local previewButton = button(panel, NS.L["Preview / move"], 124, 28, function()
                 panel:Hide()
                 if combatPreview then combatPreview:Arrange() end
             end)
             previewButton:SetPoint("BOTTOMLEFT", 16, 16)
-            local close = button(panel, "Done", 72, 28, function() panel:Hide() end)
+            local close = button(panel, NS.L["Done"], 72, 28, function() panel:Hide() end)
             close:SetPoint("BOTTOMRIGHT", -16, 16)
             if UISpecialFrames then UISpecialFrames[#UISpecialFrames + 1] = "ForeverWhisperPopupOptions" end
         end
@@ -2420,12 +2499,13 @@ local function makeSettings()
     settings.previewAccent:SetPoint("TOPLEFT")
     settings.previewAccent:SetPoint("BOTTOMLEFT")
     settings.previewAccent:SetWidth(3)
-    settings.previewText = label(preview, "Aa  Hello there!  123", db.fontSize + 2, "LEFT", 15, 0)
-    local artworkChoice = button(preview, "Artwork: " .. (db.artwork and "On" or "Off"), 120, 27, function(self)
+    settings.previewText = label(preview, NS.L["Aa  Hello there!  123"], db.fontSize + 2, "LEFT", 15, 0)
+    local artworkChoice = button(preview, NS.L["Artwork: "] .. (db.artwork and NS.L["On"] or NS.L["Off"]), 120, 27, function(self)
         db.artwork = not db.artwork
-        self:SetText("Artwork: " .. (db.artwork and "On" or "Off"))
+        self:SetText(NS.L["Artwork: "] .. (db.artwork and NS.L["On"] or NS.L["Off"]))
         applyTheme()
     end)
+    settings.artworkChoice = artworkChoice
     artworkChoice:SetPoint("RIGHT", -8, 0)
     local artPreview = CreateFrame("Frame", "ForeverWhisperArtPreview", settings)
     settings.artPreview = artPreview
@@ -2435,7 +2515,7 @@ local function makeSettings()
     artPreview:SetClampedToScreen(true)
     artPreview:EnableMouse(true)
     artPreview.bg = fill(artPreview, 0.1, 0.1, 0.15, 1)
-    label(artPreview, "ARTWORK PREVIEW", 11, "TOPLEFT", 18, -15)
+    label(artPreview, NS.L["ARTWORK PREVIEW"], 11, "TOPLEFT", 18, -15)
     local closeArt = button(artPreview, "X", 26, 24, function() artPreview:Hide() end)
     closeArt:SetPoint("TOPRIGHT", -8, -8)
     artPreview.themeName = label(artPreview, "", 16, "TOP", 0, -43)
@@ -2454,16 +2534,18 @@ local function makeSettings()
     artPreview.image = artPreview:CreateTexture(nil, "ARTWORK")
     artPreview.image:SetPoint("TOP", 0, -72)
     artPreview.image:SetSize(256, 256)
+    artPreview.emptyMessage = label(artPreview, NS.L["No artwork"], 15, "CENTER", 0, 0)
     local brightnessRow = CreateFrame("Frame", nil, artPreview)
+    artPreview.brightnessRow = brightnessRow
     brightnessRow:SetPoint("TOPLEFT", 22, -337)
     brightnessRow:SetPoint("TOPRIGHT", -22, -337)
     brightnessRow:SetHeight(47)
-    artPreview.brightness = slider(brightnessRow, 1, "Artwork brightness", "artBrightness", 0.25, 1, 0.05, applyTheme)
+    artPreview.brightness = slider(brightnessRow, 1, NS.L["Artwork brightness"], "artBrightness", 0.25, 1, 0.05, applyTheme)
     artPreview.notice = label(artPreview, "", 10, "BOTTOM", 0, 10)
     artPreview.notice:SetTextColor(0.65, 0.73, 0.81)
     artPreview:Hide()
     if UISpecialFrames then UISpecialFrames[#UISpecialFrames + 1] = "ForeverWhisperArtPreview" end
-    local previewArtButton = button(preview, "Preview art", 108, 27, function()
+    local previewArtButton = button(preview, NS.L["Preview art"], 108, 27, function()
         artPreview:Show()
         applyTheme()
     end)
@@ -2479,6 +2561,7 @@ showView = function(view)
     activeView = view
     if view ~= "chat" and window.urlCopy then window.urlCopy:Hide() end
     if view ~= "settings" and settings and settings.popupOptions then settings.popupOptions:Hide() end
+    if view ~= "settings" and settings and settings.generalOptions then settings.generalOptions:Hide() end
     if settings and settings.artPreview then settings.artPreview:Hide() end
     if contactMenu then contactMenu:Hide() end
     if customEditor then customEditor:Hide() end
@@ -2494,8 +2577,8 @@ showView = function(view)
     if actionMenu then actionMenu:Hide() end
     if newChat then newChat:Hide() end
     if window.contactFilter then window.contactFilter:ClearFocus() end
-    window.settingsButton:SetText(view == "settings" and "Back" or "Settings")
-    window.searchButton:SetText(view == "search" and "Back" or "Search")
+    window.settingsButton:SetText(view == "settings" and NS.L["Back"] or NS.L["Settings"])
+    window.searchButton:SetText(view == "search" and NS.L["Back"] or NS.L["Search"])
     if view == "chat" then
         if current and db.conversations[current] then
             local c = db.conversations[current]
@@ -2507,16 +2590,16 @@ showView = function(view)
         refreshMinimap()
         refreshTranscript(true)
     elseif view == "settings" then
-        window.heading:SetText("Preferences")
+        window.heading:SetText(NS.L["Preferences"])
     else
-        window.heading:SetText("Search")
+        window.heading:SetText(NS.L["Search"])
         if searchInput then searchInput:SetFocus() end
     end
 end
 
 local function showConversation(name, selectedKey)
     if inCombat() then
-        DEFAULT_CHAT_FRAME:AddMessage("Forever Whisper opens after combat; whispers remain in WoW chat for now.")
+        DEFAULT_CHAT_FRAME:AddMessage(NS.L["Forever Whisper opens after combat; whispers remain in WoW chat for now."])
         return
     end
     makeWindow()
@@ -2548,8 +2631,8 @@ SlashCmdList.FOREVERWHISPER = function(command)
     if command == "minimap" then
         db.showMinimap = not db.showMinimap
         refreshMinimap()
-        DEFAULT_CHAT_FRAME:AddMessage("Forever Whisper minimap button " ..
-            (db.showMinimap and "shown." or "hidden. Use /fw minimap to show it again."))
+        DEFAULT_CHAT_FRAME:AddMessage(NS.L["Forever Whisper minimap button "] ..
+            (db.showMinimap and NS.L["shown."] or NS.L["hidden. Use /fw minimap to show it again."]))
     elseif command == "popup" or command == "popup reset" then
         if combatPreview then
             if command == "popup reset" then combatPreview:ResetGeometry() end
@@ -2557,7 +2640,7 @@ SlashCmdList.FOREVERWHISPER = function(command)
         end
     elseif command == "settings" or command == "config" then
         if inCombat() then
-            DEFAULT_CHAT_FRAME:AddMessage("Forever Whisper settings are available after combat.")
+            DEFAULT_CHAT_FRAME:AddMessage(NS.L["Forever Whisper settings are available after combat."])
             return
         end
         makeWindow()
@@ -2605,9 +2688,9 @@ local function makeMinimapButton()
     minimapButton:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
         GameTooltip:AddLine("Forever Whisper", 0.45, 0.86, 0.90)
-        GameTooltip:AddLine("Left-click: open chats", 1, 1, 1)
-        GameTooltip:AddLine("Right-click: settings", 1, 1, 1)
-        GameTooltip:AddLine("Drag: move around minimap", 0.75, 0.81, 0.87)
+        GameTooltip:AddLine(NS.L["Left-click: open chats"], 1, 1, 1)
+        GameTooltip:AddLine(NS.L["Right-click: settings"], 1, 1, 1)
+        GameTooltip:AddLine(NS.L["Drag: move around minimap"], 0.75, 0.81, 0.87)
         GameTooltip:Show()
     end)
     minimapButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -2652,7 +2735,7 @@ end
 
 FW:RegisterEvent("ADDON_LOADED")
 StaticPopupDialogs["FOREVERWHISPER_IGNORE"] = {
-    text = "Ignore %s? You will stop receiving their whispers.",
+    text = NS.L["Ignore %s? You will stop receiving their whispers."],
     button1 = YES,
     button2 = NO,
     OnAccept = function(_, name)
@@ -2667,7 +2750,7 @@ StaticPopupDialogs["FOREVERWHISPER_IGNORE"] = {
     hideOnEscape = true,
 }
 StaticPopupDialogs["FOREVERWHISPER_CLEAR"] = {
-    text = "Clear saved chat history with %s?",
+    text = NS.L["Clear saved chat history with %s?"],
     button1 = YES,
     button2 = NO,
     OnAccept = function(_, key)
@@ -2686,7 +2769,7 @@ StaticPopupDialogs["FOREVERWHISPER_CLEAR"] = {
     hideOnEscape = true,
 }
 StaticPopupDialogs["FOREVERWHISPER_DELETE"] = {
-    text = "Delete the conversation with %s and all its saved messages? A new whisper will create it again.",
+    text = NS.L["Delete the conversation with %s and all its saved messages? A new whisper will create it again."],
     button1 = YES,
     button2 = NO,
     OnAccept = function(_, key)
@@ -2715,10 +2798,22 @@ StaticPopupDialogs["FOREVERWHISPER_DELETE"] = {
     hideOnEscape = true,
 }
 FW:SetScript("OnEvent", function(_, event, ...)
-    if event == "ADDON_LOADED" then
+    if event == "GLOBAL_MOUSE_DOWN" then
+        NS.ReleaseOutsideFocus({window, copyWindow})
+    elseif event == "ADDON_LOADED" then
         if ... ~= ADDON then return end
         ForeverWhisperDB = type(ForeverWhisperDB) == "table" and ForeverWhisperDB or {}
         db = ForeverWhisperDB
+        NS.SetLanguage(db.language)
+        local dialogTexts = {
+            FOREVERWHISPER_IGNORE = "Ignore %s? You will stop receiving their whispers.",
+            FOREVERWHISPER_CLEAR = "Clear saved chat history with %s?",
+            FOREVERWHISPER_DELETE = "Delete the conversation with %s and all its saved messages? A new whisper will create it again.",
+        }
+        for key, text in pairs(dialogTexts) do
+            StaticPopupDialogs[key].text = NS.L[text]
+            StaticPopupDialogs[key].button1, StaticPopupDialogs[key].button2 = NS.L["Yes"], NS.L["No"]
+        end
         if db.artwork == nil and db.blossoms ~= nil then db.artwork = db.blossoms ~= false end
         db.blossoms = nil
         for key, value in pairs(defaults) do
@@ -2796,6 +2891,9 @@ FW:SetScript("OnEvent", function(_, event, ...)
         FW:RegisterEvent("CHAT_MSG_WHISPER")
         FW:RegisterEvent("CHAT_MSG_WHISPER_INFORM")
         FW:RegisterEvent("FRIENDLIST_UPDATE")
+        if not C_EventUtils or not C_EventUtils.IsEventValid or C_EventUtils.IsEventValid("GLOBAL_MOUSE_DOWN") then
+            FW:RegisterEvent("GLOBAL_MOUSE_DOWN")
+        end
         FW:RegisterEvent("GUILD_ROSTER_UPDATE")
         FW:RegisterEvent("PLAYER_GUILD_UPDATE")
         FW:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -2885,8 +2983,8 @@ FW:SetScript("OnEvent", function(_, event, ...)
             else
                 if outgoing or not db.conversations[key].muted then showConversation(nil, key) end
             end
-            if not outgoing and db.sound and not db.conversations[key].muted and PlaySound then
-                PlaySound(SOUNDKIT and SOUNDKIT.TELL_MESSAGE or 3081)
+            if not outgoing and db.sound and not db.conversations[key].muted then
+                NS.PlayAlertSound()
             end
         end
     elseif event == "PLAYER_REGEN_DISABLED" then

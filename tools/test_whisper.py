@@ -10,7 +10,7 @@ sys.path.insert(0, str(ROOT / ".tools" / "lua"))
 from lupa.lua51 import LuaRuntime
 
 lua = LuaRuntime(unpack_returned_tuples=True)
-lua.execute(r'''
+WOW_MOCK = r'''
 objects, filters, sent = {}, {}, {}
 local methods = {}
 local function object(kind, name, parent)
@@ -24,7 +24,7 @@ function CreateFrame(kind,name,parent) return object(kind,name,parent) end
 function methods:CreateTexture(name,layer) local t=object("Texture",name,self); t.layer=layer; return t end
 function methods:CreateFontString(name,layer) return object("FontString",name,self) end
 local nativeScripts={OnEvent=true,OnShow=true,OnHide=true,OnSizeChanged=true,OnUpdate=true,
-    OnEnter=true,OnLeave=true,OnMouseDown=true,OnMouseUp=true,OnMouseWheel=true,OnClick=true,
+    OnEnter=true,OnLeave=true,OnMouseDown=true,OnMouseUp=true,OnMouseWheel=true,OnClick=true,OnKeyDown=true,OnKeyUp=true,
     OnDragStart=true,OnDragStop=true,OnEscapePressed=true,OnEnterPressed=true,OnTextChanged=true,
     OnEditFocusGained=true,OnEditFocusLost=true,OnHyperlinkClick=true,OnValueChanged=true}
 function methods:SetScript(name,fn)
@@ -85,6 +85,8 @@ function methods:SetVertexColor(...) self.vertexColor={...} end
 function methods:SetDesaturated(v) self.desaturated=v end
 function methods:SetHyperlinksEnabled(value) self.hyperlinks=value end
 function methods:GetFrameLevel() return self.level or (self.parent and self.parent:GetFrameLevel()+1 or 1) end
+function methods:HasFocus() return not not self.focus end
+function methods:GetParent() return self.parent end
 function methods:SetFrameLevel(n) self.level=n end
 function methods:GetEffectiveScale() return 1 end
 function methods:GetCenter() return 400,300 end
@@ -200,9 +202,10 @@ ForeverWhisperDB={schema=2,identitySchema=1,width=620,height=480,font=5,theme=7,
     conversations={legacy={name="Legacy",last=1,unread=0,pinned=true,
         messages={{text="Existing saved history",at=1,outgoing=false}}},
         ["bnet:saved#1234"]={kind="bnet",name="Saved#1234",battleTag="Saved#1234",last=0,messages={}}}}
-''')
+'''
+lua.execute(WOW_MOCK)
 ns = lua.table()
-for name in ("MessengerUI.lua","Social.lua","BattleNet.lua","ForeverWhisper.lua"):
+for name in ("Localization.lua","MessengerUI.lua","Social.lua","BattleNet.lua","ForeverWhisper.lua"):
     source = (ROOT / name).read_text(encoding="utf-8")
     lua.execute("assert(loadstring(...))", source)
     lua.execute(source, "ForeverWhisper", ns)
@@ -394,13 +397,23 @@ assert(ForeverWhisperWindow.artCorner.vertexColor[4]==1)
 assert(ForeverWhisperWindow.artAmbient.vertexColor[4]==0.30)
 assert(ForeverWhisperWindow.artHeader.vertexColor[4]==0.60)
 ForeverWhisperDB.opacity=0.94
-local artNames={"IronCorner","FrostCorner","SakuraCorner","ForestCorner","DoomCorner","IronCorner","CelestialCorner","CelestialCorner","SakuraCorner"}
+local artNames={"IronCorner","FrostCorner",false,"ForestCorner","DoomCorner","IronCorner","CelestialCorner","CelestialCorner","SakuraCorner"}
 for i=1,9 do
     nextTheme.scripts.OnClick(nextTheme)
+    if ForeverWhisperDB.theme==3 then
+        assert(not ForeverWhisperWindow.artCorner.shown and not ForeverWhisperWindow.artHeader.shown)
+        assert(not ForeverWhisperWindow.artAmbient.shown and not ForeverWhisperWindow.artSide.shown)
+        assert(not ForeverWhisperWindow.accent.shown and not log.rows[1].rail.shown)
+        assert(not ForeverWhisperWindow.artCorner.texture and not artPreview.image.texture)
+        assert(artPreview.emptyMessage.shown and not artPreview.brightnessRow.shown)
+        assert(ForeverWhisperDB.artwork,"Minimal changed the player's global artwork preference")
+        assert(not find("Button","No artwork").enabled)
+    else
     assert(ForeverWhisperWindow.artCorner.texture:find(artNames[ForeverWhisperDB.theme]..".tga",1,true))
     assert(artPreview.image.texture==ForeverWhisperWindow.artCorner.texture)
     assert(ForeverWhisperWindow.artAmbient.texture:find(artNames[ForeverWhisperDB.theme]:gsub("Corner","Atmosphere")..".tga",1,true))
     assert(artPreview.headerArt.texture==ForeverWhisperWindow.artHeader.texture)
+    end
 end
 click("Artwork: On");assert(not ForeverWhisperDB.artwork)
 for i=1,9 do
@@ -880,6 +893,14 @@ log.onHyperlinkClick(log,urlLink,imageURL,"RightButton")
 assert(find("EditBox",imageURL).focus and composer:GetText()=="Keep this unfinished draft")
 ForeverWhisperWindow.urlCopy.box.scripts.OnEscapePressed()
 assert(not ForeverWhisperWindow.urlCopy:IsShown() and composer:GetText()=="Keep this unfinished draft")
+assert(not composer.focus and not ForeverWhisperWindow.urlCopy.box.focus,"Closing link copy stole movement keys")
+log.onHyperlinkClick(log,urlLink,imageURL,"RightButton")
+function IsControlKeyDown() return true end
+ForeverWhisperWindow.urlCopy.box.scripts.OnKeyDown(ForeverWhisperWindow.urlCopy.box,"C")
+ForeverWhisperWindow.urlCopy.box.scripts.OnKeyUp(ForeverWhisperWindow.urlCopy.box,"C")
+assert(not ForeverWhisperWindow.urlCopy:IsShown() and not composer.focus and not ForeverWhisperWindow.urlCopy.box.focus,
+    "Ctrl+C did not release keyboard focus after the copy keystroke")
+IsControlKeyDown=nil
 log.rows[#log.lines].body.scripts.OnMouseDown(nil,"RightButton");click("Copy link")
 find("EditBox",imageURL);click("Close")
 event("CHAT_MSG_WHISPER","See https://example.com/a?x=1&y=2 and www.example.org/test.","LinkTester")
@@ -888,6 +909,37 @@ find("EditBox","https://example.com/a?x=1&y=2\nwww.example.org/test");click("Clo
 event("CHAT_MSG_WHISPER","[Reply to: old excerpt] "..imageURL,"LinkTester")
 log.rows[#log.lines].body.scripts.OnMouseDown(nil,"RightButton");click("Copy link")
 find("EditBox",imageURL);click("Close")
+-- Clicking outside releases only this addon's fields, without discarding drafts.
+composer:SetText("Keep movement draft");composer:SetFocus()
+function GetMouseFoci() return {composer} end
+event("GLOBAL_MOUSE_DOWN","LeftButton")
+assert(composer.focus,"Click inside an edit box lost focus")
+GetMouseFoci=function() return {UIParent} end
+event("GLOBAL_MOUSE_DOWN","LeftButton")
+assert(not composer.focus and composer:GetText()=="Keep movement draft")
+event("CHAT_MSG_WHISPER","Incoming should not focus typing","LinkTester")
+assert(not composer.focus,"Incoming whisper stole movement keys")
+local foreign=CreateFrame("EditBox",nil,UIParent);foreign:SetFocus()
+event("GLOBAL_MOUSE_DOWN","LeftButton")
+assert(foreign.focus,"Outside click changed another addon's keyboard field")
+foreign:ClearFocus();GetMouseFoci=nil
+-- Sound preview is explicit; alerts obey global sound and contact mute settings.
+click("Settings");click("Sound / language")
+local general=ForeverWhisperGeneralOptions
+local playedSounds={}
+function PlaySound(id) playedSounds[#playedSounds+1]=id;return true end
+general.soundChoice.scripts.OnClick()
+click("Listen")
+assert(playedSounds[#playedSounds]==8960 and not ForeverWhisperDB.sound)
+click("Done");click("Back")
+ForeverWhisperDB.sound=true
+event("CHAT_MSG_WHISPER","Selected sound","SoundTester")
+assert(playedSounds[#playedSounds]==8960)
+local soundCount=#playedSounds
+ForeverWhisperDB.conversations.soundtester.muted=true
+event("CHAT_MSG_WHISPER","Muted sound","SoundTester")
+assert(#playedSounds==soundCount)
+ForeverWhisperDB.sound=false;ForeverWhisperDB.soundChoice=1
 -- No idle per-frame handlers; minimap drag adds one only during dragging.
 for _,o in ipairs(objects) do assert(not o.scripts.OnUpdate,"Unexpected idle polling") end
 ''')
@@ -951,3 +1003,49 @@ print("PASS: context recipients, native report menu/fallback, name copying, cust
 print("      header/transcript right-clicks, artwork toggles, and shape/default-shortcut removal.")
 print("PASS: map-pin drafts, native waypoint preservation, active-pin sharing, Classic marker,")
 print("      map changes, invalid/missing coordinates, and no automatic location messages.")
+
+# Exercise real startup for both Spanish clients and both manual language overrides.
+for game_locale, choice, spanish in (
+    ("esES", "auto", True), ("esMX", "auto", True),
+    ("enUS", "es", True), ("esES", "en", False), ("deDE", "auto", False),
+):
+    vm = LuaRuntime(unpack_returned_tuples=True)
+    vm.execute(WOW_MOCK)
+    vm.execute(r'''
+        local locale, choice = ...
+        function GetLocale() return locale end
+        function ReloadUI() requestedReload=true end
+        ForeverWhisperDB.language = choice
+        ForeverWhisperDB.conversations.keep = {name="EnglishName",nickname="Settings",note="Search",last=1,
+            messages={{text="Send Online Settings",at=1,outgoing=false}}}
+    ''', game_locale, choice)
+    locale_ns = vm.table()
+    for module in ("Localization.lua", "MessengerUI.lua", "Social.lua", "BattleNet.lua", "ForeverWhisper.lua"):
+        vm.execute((ROOT / module).read_text(encoding="utf-8"), "ForeverWhisper", locale_ns)
+    vm.execute(r'''
+        local spanish = ...
+        event("ADDON_LOADED","ForeverWhisper")
+        SlashCmdList.FOREVERWHISPER("EnglishName")
+        local win=ForeverWhisperWindow
+        assert(win.sendButton.text==(spanish and "Enviar" or "Send"))
+        assert(win.settingsButton.text==(spanish and "Ajustes" or "Settings"))
+        assert(win.transcript.rows[1].reply:GetWidth()==(spanish and 70 or 48))
+        assert(win.heading.text=="Settings","Nickname was translated as UI text")
+        local c=ForeverWhisperDB.conversations.englishname
+        assert(c.name=="EnglishName" and c.note=="Search" and c.messages[1].text=="Send Online Settings")
+        assert(not visibleInput().focus,"Opening a conversation stole keyboard focus")
+        assert(StaticPopupDialogs.FOREVERWHISPER_CLEAR.text==(spanish and "¿Vaciar el historial con %s?" or "Clear saved chat history with %s?"))
+        SlashCmdList.FOREVERWHISPER("settings")
+        click(spanish and "Sonido / idioma" or "Sound / language")
+        local panel=ForeverWhisperGeneralOptions
+        assert(panel:IsShown())
+        local oldChoice=ForeverWhisperDB.language
+        panel.languageChoice.scripts.OnClick()
+        assert(ForeverWhisperDB.language~=oldChoice,"Language choice did not persist")
+        assert(not requestedReload,"Changing the language forced an unexpected UI reload")
+        assert(win.settingsButton.text==(spanish and "Volver" or "Back"),"Language changed before the requested reload")
+        click(spanish and "Recargar interfaz" or "Reload UI")
+        assert(requestedReload,"Explicit reload button did not apply the player's choice")
+        click(spanish and "Listo" or "Done")
+    ''', spanish)
+print("PASS: esES/esMX automatic locale, manual English/Spanish overrides, dialogs, untouched user text, sound choice, and outside-click focus.")
