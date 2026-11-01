@@ -891,8 +891,11 @@ end
 
 local function savePosition()
     if not window then return end
-    local _, _, _, x, y = window:GetPoint(1)
-    db.x, db.y = x or 0, y or 0
+    local x, y = window:GetCenter()
+    local parentX, parentY = UIParent:GetCenter()
+    if not x or not y or not parentX or not parentY then return end
+    local ratio = UIParent:GetEffectiveScale() / window:GetEffectiveScale()
+    db.x, db.y = x - parentX * ratio, y - parentY * ratio
 end
 
 local function copyHistory(key)
@@ -1108,6 +1111,7 @@ openContactMenu = function(key, owner)
         add("Share active map pin", function() prepareMapPin(key, true) end)
     end
     add("Clear history...", function() StaticPopup_Show("FOREVERWHISPER_CLEAR", c.name, nil, key) end)
+    add("Delete conversation...", function() StaticPopup_Show("FOREVERWHISPER_DELETE", c.name, nil, key) end)
     for _, item in ipairs(db.customActions) do
         local action = item
         if c.kind ~= "bnet" or action.template:sub(1, 1) ~= "/" then
@@ -1810,22 +1814,25 @@ local function makeWindow()
     searchView.page = label(searchView, "", 12, "BOTTOMRIGHT", -26, 20)
     searchView.page:SetTextColor(0.65, 0.76, 0.84)
     searchView:Hide()
-    local resizing = false
+    local resizing, resize
     local function finishResize()
         if not resizing then return end
-        resizing = false
-        window:StopMovingOrSizing()
-        db.width = clamp(math.floor(window:GetWidth() / 10 + 0.5) * 10, 700, 1200)
-        db.height = clamp(math.floor(window:GetHeight() / 10 + 0.5) * 10, 480, 850)
+        resizing = nil
+        resize:SetScript("OnUpdate", nil)
+        db.width = clamp(window:GetWidth(), 700, 1200)
+        db.height = clamp(window:GetHeight(), 480, 850)
         window:SetSize(db.width, db.height)
         if settings and settings.widthSlider then
+            settings.syncingSize = true
             settings.widthSlider:SetValue(db.width)
             settings.heightSlider:SetValue(db.height)
+            settings.syncingSize = nil
         end
         refreshContacts()
         savePosition()
     end
-    local resize = CreateFrame("Button", nil, window)
+    resize = CreateFrame("Button", nil, window)
+    window.resizeGrip = resize
     resize:SetSize(20, 20)
     resize:SetPoint("BOTTOMRIGHT", -2, 2)
     resize:SetFrameLevel(window:GetFrameLevel() + 30)
@@ -1840,8 +1847,28 @@ local function makeWindow()
     resize:SetScript("OnLeave", function() GameTooltip:Hide() end)
     resize:SetScript("OnMouseDown", function(_, mouseButton)
         if mouseButton == "LeftButton" and not inCombat() then
-            resizing = true
-            window:StartSizing("BOTTOMRIGHT")
+            local x, y = GetCursorPosition()
+            local left, top = window:GetLeft(), window:GetTop()
+            if not left or not top then return end
+            resizing = { x = x, y = y, width = window:GetWidth(), height = window:GetHeight(),
+                scale = window:GetEffectiveScale() }
+            local parentScale = UIParent:GetEffectiveScale() / resizing.scale
+            resizing.maxWidth = math.max(resizing.width, math.min(1200, UIParent:GetWidth() * parentScale - left))
+            resizing.maxHeight = math.max(resizing.height, math.min(850, top))
+            -- StartSizing snaps the frame's outer edge to a cursor inside the grip.
+            -- Anchor the opposite corner and apply cursor deltas instead.
+            window:ClearAllPoints()
+            window:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
+            resize:SetScript("OnUpdate", function()
+                if inCombat() or (IsMouseButtonDown and not IsMouseButtonDown("LeftButton")) then
+                    finishResize()
+                    return
+                end
+                local cursorX, cursorY = GetCursorPosition()
+                local width = clamp(resizing.width + (cursorX - resizing.x) / resizing.scale, 700, resizing.maxWidth)
+                local height = clamp(resizing.height - (cursorY - resizing.y) / resizing.scale, 480, resizing.maxHeight)
+                if width ~= window:GetWidth() or height ~= window:GetHeight() then window:SetSize(width, height) end
+            end)
         end
     end)
     resize:SetScript("OnMouseUp", finishResize)
@@ -1915,6 +1942,10 @@ local function makeSettings()
             return step < 1 and string.format("%.2f", v) or tostring(v)
         end
         s:SetScript("OnValueChanged", function(_, v)
+            if settings.syncingSize and (field == "width" or field == "height") then
+                value:SetText(formatValue(db[field]))
+                return
+            end
             v = math.floor(v / step + 0.5) * step
             db[field] = v
             value:SetText(formatValue(v))
@@ -2279,6 +2310,30 @@ StaticPopupDialogs["FOREVERWHISPER_CLEAR"] = {
             refreshContacts()
             refreshMinimap()
         end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+}
+StaticPopupDialogs["FOREVERWHISPER_DELETE"] = {
+    text = "Delete the conversation with %s and all its saved messages? A new whisper will create it again.",
+    button1 = YES,
+    button2 = NO,
+    OnAccept = function(_, key)
+        if not db or not db.conversations[key] then return end
+        db.conversations[key], drafts[key], replyDrafts[key] = nil, nil, nil
+        if searchJump and searchJump.key == key then searchJump = nil end
+        if current == key then
+            if social then social:Stop() end
+            current = nil
+            if input then input:SetText(""); input:ClearFocus() end
+            if updateReplyPreview then updateReplyPreview() end
+        end
+        if copyWindow then copyWindow:Hide(); copyBox:SetText("") end
+        refreshContacts()
+        refreshTranscript(true)
+        refreshMinimap()
+        if searchInput then performSearch() end
     end,
     timeout = 0,
     whileDead = true,

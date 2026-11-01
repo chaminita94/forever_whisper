@@ -1,3 +1,13 @@
+# Forever Whisper 0.15.0-beta4
+
+## Conversation management and resizing
+
+- Add Delete conversation to character and Battle.net right-click menus, with confirmation.
+- Remove the deleted contact's history, pin, unread count, draft, and quote draft. Other chats stay intact; a new whisper creates a fresh conversation.
+- Fix the bottom-right resize grip jumping when clicked by resizing from cursor movement instead of snapping an edge to the cursor.
+- Keep the top-left corner fixed while resizing, respect window scale, and avoid 10-pixel snapping on release.
+- Save window position consistently after moving and resizing.
+
 # Forever Whisper 0.15.0-beta3
 
 ## Sidebar presence fixes

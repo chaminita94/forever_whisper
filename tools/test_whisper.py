@@ -609,6 +609,48 @@ assert(ForeverWhisperWindow.heading.text=="freddy")
 event("CHAT_MSG_WHISPER","Character with similar name","freddy")
 assert(ForeverWhisperDB.conversations.freddy.kind~="bnet")
 assert(ForeverWhisperDB.conversations["bnet:freddy#1111"]==bnChat)
+-- Resizing starts at the current size, follows scaled deltas, and never snaps on release.
+local win=ForeverWhisperWindow
+UIParent:SetSize(1920,1080)
+win:SetSize(900,600)
+win.GetEffectiveScale=function() return 1.25 end
+win.GetLeft=function() return 120 end
+win.GetTop=function() return 650 end
+win.GetCenter=function(self) return 120+self:GetWidth()/2,650-self:GetHeight()/2 end
+local cursorX,cursorY=1100,400
+function GetCursorPosition() return cursorX,cursorY end
+win.resizeGrip.scripts.OnMouseDown(win.resizeGrip,"LeftButton")
+assert(win:GetWidth()==900 and win:GetHeight()==600,"Resize jumped on mouse-down")
+win.resizeGrip.scripts.OnUpdate()
+assert(win:GetWidth()==900 and win:GetHeight()==600,"Stationary cursor resized the window")
+cursorX,cursorY=1153,373
+win.resizeGrip.scripts.OnUpdate()
+assert(math.abs(win:GetWidth()-942.4)<0.001 and math.abs(win:GetHeight()-621.6)<0.001)
+win.resizeGrip.scripts.OnMouseUp()
+assert(math.abs(win:GetWidth()-942.4)<0.001 and math.abs(win:GetHeight()-621.6)<0.001,
+    "Settings sliders snapped dimensions after resizing")
+assert(not win.resizeGrip.scripts.OnUpdate,"Resize polling continued after release")
+assert(math.abs(ForeverWhisperDB.x-(120+942.4/2-400/1.25))<0.001,
+    "Saved position mixed top-left offsets with center offsets")
+win.GetEffectiveScale,win.GetLeft,win.GetTop,win.GetCenter=nil,nil,nil,nil
+GetCursorPosition=nil
+-- Deleting an active conversation removes only that contact and discards its draft.
+SlashCmdList.FOREVERWHISPER("DeleteMe")
+event("CHAT_MSG_WHISPER","Delete this history","DeleteMe")
+log.rows[#log.lines].reply.scripts.OnClick()
+composer:SetText("Deleted draft")
+rightClick("DeleteMe");click("Delete conversation...")
+assert(popup.which=="FOREVERWHISPER_DELETE" and popup.data=="deleteme")
+assert(ForeverWhisperDB.conversations.deleteme,"Conversation deleted before confirmation")
+StaticPopupDialogs.FOREVERWHISPER_DELETE.OnAccept(nil,popup.data)
+assert(not ForeverWhisperDB.conversations.deleteme and composer:GetText()=="")
+assert(not win.replyBar:IsShown() and ForeverWhisperDB.conversations["bnet:freddy#1111"]==bnChat)
+event("CHAT_MSG_WHISPER","New conversation","DeleteMe")
+SlashCmdList.FOREVERWHISPER("DeleteMe")
+assert(#ForeverWhisperDB.conversations.deleteme.messages==1 and composer:GetText()=="")
+assert(not win.replyBar:IsShown(),"Deleted quote draft came back")
+StaticPopupDialogs.FOREVERWHISPER_DELETE.OnAccept(nil,"bnet:freddy#1111")
+assert(not ForeverWhisperDB.conversations["bnet:freddy#1111"] and ForeverWhisperDB.conversations.deleteme)
 -- No idle per-frame handlers; minimap drag adds one only during dragging.
 for _,o in ipairs(objects) do assert(not o.scripts.OnUpdate,"Unexpected idle polling") end
 ''')

@@ -2,7 +2,7 @@
 ## Title: Forever Whisper
 ## Notes: Lightweight messenger-style whispers for WoW Forever
 ## Author: Vitaliy (chaminita94)
-## Version: 0.15.0-beta3
+## Version: 0.15.0-beta4
 ## X-Curse-Project-ID: 1756454
 ## IconTexture: Interface\AddOns\ForeverWhisper\UI\WhisperMark.tga
 ## SavedVariables: ForeverWhisperDB

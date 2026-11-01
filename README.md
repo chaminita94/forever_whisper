@@ -2,13 +2,14 @@
 
 A customizable messenger for World of Warcraft whispers, with persistent conversations, themed artwork, and combat-friendly behavior.
 
-**Current source: 0.15.0-beta3.** The recent Classic Era and Battle.net changes need further in-game testing before a stable release.
+**Current source: 0.15.0-beta4.** The recent Classic Era and Battle.net changes need further in-game testing before a stable release.
 
 ## Features
 
 - Incoming messages on the left and your replies on the right, with sender labels and timestamps.
 - Character and Battle.net conversations, saved message history, unread indicators, and pinned chats.
 - Search by contact name or message text.
+- Delete a conversation and its saved history from the right-click menu, with confirmation. New whispers can create it again.
 - Reply buttons with quoted excerpts, copy chat, and supported native character actions such as invite, ignore, and report.
 - A minimap button and `/fw` command; `/fw Name` opens a character conversation.
 - Combat fallback to normal WoW chat, optional brief message previews, and reopening after combat.
