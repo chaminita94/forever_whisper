@@ -4,9 +4,9 @@ Normal pushes run checks without publishing to CurseForge. Pushing a tag startin
 
 ## One-time setup
 
-In GitHub Settings → Secrets and variables → Actions:
+In GitHub Settings â†’ Secrets and variables â†’ Actions:
 
-- Add a repository variable named `CURSEFORGE_PROJECT_ID` with the numeric ID from your CurseForge project page.
+The CurseForge project ID **1756454** is already set in both TOC files.
 - Add a repository secret named `CF_API_TOKEN` with an upload token from your CurseForge author account. Never commit the token.
 
 This uses BigWigsMods/packager. Leave CurseForge's separate automatic packaging integration disabled to avoid duplicate uploads.
