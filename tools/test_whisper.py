@@ -82,6 +82,7 @@ function methods:SetTextColor(...) self.textColor={...} end
 function methods:SetTexture(t) self.texture=t end
 function methods:SetTexCoord(...) self.texCoord={...} end
 function methods:SetVertexColor(...) self.vertexColor={...} end
+function methods:SetRotation(value) self.rotation=value end
 function methods:SetDesaturated(v) self.desaturated=v end
 function methods:SetHyperlinksEnabled(value) self.hyperlinks=value end
 function methods:GetFrameLevel() return self.level or (self.parent and self.parent:GetFrameLevel()+1 or 1) end
@@ -1095,3 +1096,22 @@ for game_locale, choice, spanish in (
         click(spanish and "Listo" or "Done")
     ''', spanish)
 print("PASS: esES/esMX automatic locale, manual English/Spanish overrides, dialogs, untouched user text, sound choice, and outside-click focus.")
+
+# Bundled fonts must be static TrueType files that render Spanish, not missing-glyph boxes.
+from PIL import ImageFont
+import struct
+for filename in ("Questrial-Regular.ttf", "GentiumBookPlus-Regular.ttf", "Rajdhani-Regular.ttf",
+                 "AsapCondensed-Regular.ttf", "Almendra-Regular.ttf", "CarterOne.ttf"):
+    path = ROOT / "Fonts" / filename
+    data = path.read_bytes()
+    assert data[:4] == b"\x00\x01\x00\x00"
+    count = struct.unpack_from(">H", data, 4)[0]
+    assert b"fvar" not in {data[12+i*16:16+i*16] for i in range(count)}
+    font = ImageFont.truetype(str(path), 18)
+    missing = font.getmask(chr(0x10ffff))
+    for char in "ñÑáéíóúü¿¡":
+        glyph = font.getmask(char)
+        assert (glyph.size, bytes(glyph)) != (missing.size, bytes(missing)), (filename,char)
+    license_name = filename.replace("-Regular.ttf", "-OFL.txt").replace("CarterOne.ttf", "CarterOne-OFL.txt")
+    assert "SIL OPEN FONT LICENSE" in (ROOT / "Fonts" / license_name).read_text(encoding="utf-8").upper()
+print("PASS: six new static OFL font families load and cover Spanish accents/punctuation.")

@@ -113,7 +113,7 @@ local es = {
     ["Language"] = "Idioma", ["Automatic"] = "Automático", ["Reload UI"] = "Recargar interfaz",
     ["Yes"] = "Sí", ["No"] = "No",
     ["Applies after reloading the interface"] = "Se aplica al recargar la interfaz",
-    ["Whisper sound"] = "Sonido del susurro", ["Listen"] = "Escuchar", ["Ready check"] = "Comprobación de listos",
+    ["Whisper sound"] = "Sonido", ["Listen"] = "Escuchar", ["Ready check"] = "Comprobación de listos",
     ["Raid warning"] = "Aviso de banda", ["Map ping"] = "Señal del mapa", ["Friend alert"] = "Aviso de amigo",
     ["Classic"] = "Clásica", ["Slate"] = "Pizarra", ["Plum"] = "Ciruela", ["Wildwood"] = "Bosque",
     ["Graphite"] = "Grafito", ["Moonstone"] = "Piedra lunar", ["Starlight"] = "Luz estelar",

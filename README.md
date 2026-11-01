@@ -6,6 +6,8 @@ A customizable messenger for World of Warcraft whispers, with persistent convers
 
 ## Features
 
+- Twelve font choices, including rounded, book, technical, compact, fantasy, and playful styles. Dropdowns use custom chevron indicators rather than text arrows.
+
 - Direct dropdown choices for theme, font, language, sound, contact order, and online notification destination. Long lists support filtering and the mouse wheel; sound entries can be previewed before selection.
 - Transcript scrolling responds in pixels on each wheel step, including over bubbles.
 
@@ -65,6 +67,6 @@ See [RELEASING.md](RELEASING.md) for tag-triggered CurseForge uploads.
 Code is licensed under MIT; see [LICENSE](LICENSE). Bundled assets retain their separate licenses:
 
 - Twemoji graphics: CC BY 4.0, with attribution in [Emoji/LICENSE-GRAPHICS.txt](Emoji/LICENSE-GRAPHICS.txt).
-- Atkinson Hyperlegible and Instrument Serif fonts: SIL Open Font License, included in the Fonts directory.
+- All bundled fonts: SIL Open Font License, with copyright notices included in the Fonts directory. See Fonts/SOURCES.md for source links.
 
 World of Warcraft and Battle.net are Blizzard trademarks. This is an independent community addon.

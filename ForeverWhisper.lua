@@ -112,6 +112,12 @@ local fonts = {
     { "Skurri", "Fonts\\SKURRI.TTF" },
     { "Atkinson", "Interface\\AddOns\\ForeverWhisper\\Fonts\\AtkinsonHyperlegible-Regular.ttf" },
     { "Instrument Serif", "Interface\\AddOns\\ForeverWhisper\\Fonts\\InstrumentSerif-Regular.ttf" },
+    { "Questrial", "Interface\\AddOns\\ForeverWhisper\\Fonts\\Questrial-Regular.ttf" },
+    { "Gentium Book Plus", "Interface\\AddOns\\ForeverWhisper\\Fonts\\GentiumBookPlus-Regular.ttf" },
+    { "Rajdhani", "Interface\\AddOns\\ForeverWhisper\\Fonts\\Rajdhani-Regular.ttf" },
+    { "Asap Condensed", "Interface\\AddOns\\ForeverWhisper\\Fonts\\AsapCondensed-Regular.ttf" },
+    { "Almendra", "Interface\\AddOns\\ForeverWhisper\\Fonts\\Almendra-Regular.ttf" },
+    { "Carter One", "Interface\\AddOns\\ForeverWhisper\\Fonts\\CarterOne.ttf" },
 }
 local themes = {
     { "Slate", 0.055, 0.075, 0.105, 0.65, 0.78, 0.95 },
@@ -341,6 +347,40 @@ local function validPin(mapID, x, y)
         and x >= 0 and x <= 1 and y >= 0 and y <= 1
 end
 
+function NS.UpdateDropdownArrow(control, expanded, hovered)
+    if not control or not control.dropdownArrow then return end
+    control.dropdownExpanded=not not expanded
+    local t=themes[db.theme]
+    for i,line in ipairs(control.dropdownArrow) do
+        local rotation=i==1 and -math.pi/4 or math.pi/4
+        line:SetRotation(expanded and -rotation or rotation)
+        if expanded or hovered then line:SetColorTexture(t[5],t[6],t[7],1)
+        else line:SetColorTexture(0.78,0.86,0.92,0.95) end
+    end
+end
+
+function NS.MarkDropdown(control)
+    if control.dropdownArrow then return end
+    control.dropdownArrow={}
+    for i=1,2 do
+        local line=control:CreateTexture(nil,"OVERLAY")
+        line:SetColorTexture(0.78,0.86,0.92,0.95)
+        line:SetSize(7,2)
+        line:SetPoint("CENTER",control,"RIGHT",i==1 and -17 or -12,0)
+        line:SetRotation(i==1 and -math.pi/4 or math.pi/4)
+        control.dropdownArrow[i]=line
+    end
+    control.fontText:ClearAllPoints()
+    control.fontText:SetPoint("LEFT",8,0)
+    control.fontText:SetPoint("RIGHT",-28,0)
+    control.fontText:SetJustifyH("LEFT")
+    control.fontText:SetWordWrap(false)
+    control:SetScript("OnMouseDown",function() end)
+    control:SetScript("OnMouseUp",function() end)
+    control:HookScript("OnEnter",function(self) NS.UpdateDropdownArrow(self,self.dropdownExpanded,true) end)
+    control:HookScript("OnLeave",function(self) NS.UpdateDropdownArrow(self,self.dropdownExpanded,false) end)
+end
+
 function NS.OpenDropdown(owner, entries, selected, choose)
     local menu = NS.dropdownMenu
     if menu and menu:IsShown() and menu.owner == owner then menu:Hide(); return end
@@ -419,6 +459,7 @@ function NS.OpenDropdown(owner, entries, selected, choose)
             self.offset=self.offset+(delta>0 and -3 or 3);self:Refresh()
         end)
         menu:SetScript("OnHide", function(self)
+            NS.UpdateDropdownArrow(self.owner,false,false)
             self.search:ClearFocus();self.owner=nil
             if NS.previewSound and StopSound then pcall(StopSound,NS.previewSound);NS.previewSound=nil end
         end)
@@ -440,6 +481,7 @@ function NS.OpenDropdown(owner, entries, selected, choose)
     menu:ClearAllPoints()
     menu:SetPoint("TOPLEFT",owner,"BOTTOMLEFT",0,-4)
     menu:Show();menu:Refresh()
+    NS.UpdateDropdownArrow(owner,true,false)
 end
 
 local function renderMapPins(text)
@@ -1765,6 +1807,9 @@ local function makeWindow()
         }, db.contactSort, function(value) db.contactSort=value;contactOffset=0;refreshContacts() end)
     end)
     window.contactCount:SetPoint("TOPLEFT", 12, -49)
+    NS.MarkDropdown(window.contactCount)
+    window.contactCount.fontSize=11
+    window.contactCount.fontText:SetFont(fonts[db.font][2],11,"")
     window.contactCount:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:AddLine(NS.L["Sort: Recent / A-Z / Online first"])
@@ -2476,7 +2521,7 @@ local function makeSettings()
         local box
         local function change(delta, selected)
             db[field] = selected or ((db[field] - 1 + delta + #choices) % #choices + 1)
-            box:SetText(title .. ": " .. NS.L[choices[db[field]][1]] .. "  v")
+            box:SetText(title .. ": " .. NS.L[choices[db[field]][1]])
             apply()
         end
         box = button(parent, "", 200, 31, function()
@@ -2487,9 +2532,10 @@ local function makeSettings()
         box:SetPoint("TOPLEFT")
         box:SetPoint("TOPRIGHT")
         box:SetHeight(31)
+        NS.MarkDropdown(box)
         settings.selectorBackgrounds[#settings.selectorBackgrounds + 1] = box.bg
         settings[field .. "Selector"] = box
-        box:SetText(title .. ": " .. NS.L[choices[db[field]][1]] .. "  v")
+        box:SetText(title .. ": " .. NS.L[choices[db[field]][1]])
         return function(delta) change(delta) end
     end
     local fontChoice = CreateFrame("Frame", nil, settings)
@@ -2517,7 +2563,7 @@ local function makeSettings()
             fill(panel, 0.05, 0.08, 0.12, 1)
             label(panel, NS.L["Sound and language"], 15, "TOPLEFT", 16, -14)
             local function soundCaption()
-                panel.soundChoice:SetText(NS.L["Whisper sound"] .. ": " .. NS.SoundLabel(db.soundChoice) .. "  v")
+                panel.soundChoice:SetText(NS.L["Whisper sound"] .. ": " .. NS.SoundLabel(db.soundChoice))
             end
             panel.soundChoice = button(panel, "", 280, 28, function()
                 NS.OpenDropdown(panel.soundChoice,NS.SoundOptions(),db.soundChoice,function(value)
@@ -2525,12 +2571,13 @@ local function makeSettings()
                 end)
             end)
             panel.soundChoice:SetPoint("TOPLEFT", 16, -48)
+            NS.MarkDropdown(panel.soundChoice)
             soundCaption()
             local listen = button(panel, NS.L["Listen"], 80, 28, function() NS.PlayAlertSound(db.soundChoice,true) end)
             listen:SetPoint("TOPRIGHT", -16, -48)
             local function languageCaption()
                 local name = db.language == "es" and "Español" or (db.language == "en" and "English" or NS.L["Automatic"])
-                panel.languageChoice:SetText(NS.L["Language"] .. ": " .. name .. "  v")
+                panel.languageChoice:SetText(NS.L["Language"] .. ": " .. name)
             end
             panel.languageChoice = button(panel, "", 240, 28, function()
                 NS.OpenDropdown(panel.languageChoice,{
@@ -2538,6 +2585,7 @@ local function makeSettings()
                 },db.language,function(value) db.language=value;languageCaption() end)
             end)
             panel.languageChoice:SetPoint("TOPLEFT", 16, -92)
+            NS.MarkDropdown(panel.languageChoice)
             languageCaption()
             local reload = button(panel, NS.L["Reload UI"], 120, 28, function() if ReloadUI then ReloadUI() end end)
             reload:SetPoint("TOPRIGHT", -16, -92)
@@ -2629,11 +2677,12 @@ local function makeSettings()
                     {text=modeNames.popup,value="popup"}, {text=modeNames.chat,value="chat"}, {text=modeNames.both,value="both"},
                 },db.onlineNotifyMode,function(value)
                     db.onlineNotifyMode=value
-                    panel.onlineMode:SetText(NS.L["Online notifications: "] .. modeNames[value] .. "  v")
+                    panel.onlineMode:SetText(NS.L["Online notifications: "] .. modeNames[value])
                 end)
             end)
             panel.onlineMode:SetPoint("TOPLEFT", 16, -230)
-            panel.onlineMode:SetText(NS.L["Online notifications: "] .. (modeNames[db.onlineNotifyMode] or NS.L["Popup"]) .. "  v")
+            NS.MarkDropdown(panel.onlineMode)
+            panel.onlineMode:SetText(NS.L["Online notifications: "] .. (modeNames[db.onlineNotifyMode] or NS.L["Popup"]))
             local previewButton = button(panel, NS.L["Preview / move"], 124, 28, function()
                 panel:Hide()
                 if combatPreview then combatPreview:Arrange() end

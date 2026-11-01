@@ -33,4 +33,10 @@
 - Dismiss menus on outside clicks or hiding the owner; do not steal composer focus.
 - Scroll the transcript by pixel distance on the first wheel step, including over message bubbles, rather than by whole-message boundaries. Preserve unread behavior and the Latest messages action without idle animation updates.
 
+## Dropdown indicators and more fonts
+
+- Replace the literal v suffix with custom drawn chevrons, separated from the control text. They point up while open, down while closed, and use the theme accent on hover. No Blizzard arrow textures or animation loops.
+- Add six static OFL font families: Questrial, Gentium Book Plus, Rajdhani, Asap Condensed, Almendra, and Carter One. There are now twelve font choices, with existing saved indices preserved.
+- Include each font license and source reference, and check Spanish accents and punctuation.
+
 Not yet published to CurseForge.
