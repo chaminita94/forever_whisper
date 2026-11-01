@@ -6,15 +6,18 @@ A customizable messenger for World of Warcraft whispers, with persistent convers
 
 ## Features
 
+- Direct dropdown choices for theme, font, language, sound, contact order, and online notification destination. Long lists support filtering and the mouse wheel; sound entries can be previewed before selection.
+- Transcript scrolling responds in pixels on each wheel step, including over bubbles.
+
 - Minimal replaces Plum with a flat neutral theme and no decorative artwork, even when artwork is enabled for other themes. Sakura keeps its blossom artwork.
 - Automatic Spanish/English UI from your game locale, with a manual override in Settings > Sound / language. Use Reload UI there to apply your choice. Player messages and contact details are never translated.
-- Five built-in whisper alert sounds with a Listen preview; per-contact mute still takes priority.
+- 18 native alert sounds, with Listen previews and optional sounds from installed SharedMedia addons; per-contact mute still takes priority.
 - Copying releases the keyboard after Ctrl+C, Escape, or Close. Clicking outside the addon releases its text fields while preserving drafts.
 
 - Incoming messages on the left and your replies on the right, with sender labels and timestamps.
 - Character and Battle.net conversations, saved message history, unread indicators, and pinned chats.
 - A New messages divider marks the unread boundary. Opening a pending chat jumps to it; incoming whispers preserve your position while reading older messages.
-- Click the sidebar sort button to cycle Recent, A-Z, and Online first; pinned chats stay at the top.
+- Use the sidebar sort dropdown to choose Recent, A-Z, or Online first; pinned chats stay at the top.
 - Mute notifications per contact from the right-click menu. Muted messages remain saved and counted as unread while not being viewed.
 - Search by contact name, local nickname, private note, or message text.
 - Set a nickname and private note from a contact's right-click menu; these stay local.

@@ -193,15 +193,23 @@ function NS.CreateTranscript(parent, getStyle)
         local row = self.rows[index]
         if not row then return end
         local top = math.max(0, math.min(row.top, self.totalHeight - self:GetHeight()))
-        local last = index
-        for i = index, #self.lines do
-            if self.rows[i].top < top + self:GetHeight() then last = i else break end
-        end
-        self.offset = #self.lines - last
         self:SetVerticalScroll(top)
+        self:ScrollPixels(0)
     end
-    function view:ScrollUp() self:SetScrollOffset(self.offset + 1) end
-    function view:ScrollDown() self:SetScrollOffset(self.offset - 1) end
+    function view:ScrollPixels(delta)
+        local maximum = math.max(0, self.totalHeight-self:GetHeight())
+        local position = math.max(0, math.min(maximum, self:GetVerticalScroll()-delta*math.max(30,(self.fontSize or 14)*3)))
+        self:SetVerticalScroll(position)
+        self.offset = 0
+        if position < maximum-0.5 then
+            for i=#self.lines,1,-1 do
+                if self.rows[i].bottom > position+self:GetHeight() then self.offset=self.offset+1 else break end
+            end
+            self.offset = math.max(1,self.offset)
+        end
+    end
+    function view:ScrollUp() self:ScrollPixels(1) end
+    function view:ScrollDown() self:ScrollPixels(-1) end
     function view:Restyle()
         self.totalHeight = 0
         for index = 1, #self.lines do layoutRow(index) end

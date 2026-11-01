@@ -189,6 +189,19 @@ function find(kind,text)
     error("Missing visible "..kind..": "..text)
 end
 function click(text) local b=find("Button",text);assert(b.enabled~=false);b.scripts.OnClick(b) end
+function selectDropdown(value)
+    local menu=ForeverWhisperDropdown
+    assert(menu and menu:IsShown(),"Dropdown did not open")
+    for _,entry in ipairs(menu.entries) do
+        if entry.value==value then
+            if menu.search:IsShown() then menu.search:SetText(entry.text) end
+            for _,row in ipairs(menu.rows) do
+                if row:IsShown() and row.entry and row.entry.value==value then row.scripts.OnClick(row);return end
+            end
+        end
+    end
+    error("Dropdown value missing: "..tostring(value))
+end
 function visibleInput()
     for _,o in ipairs(objects) do if o.kind=="EditBox" and o:IsShown() and o.hint then return o end end
     error("No composer")
@@ -266,6 +279,15 @@ end
 click("Latest messages")
 assert(log.offset==0)
 assert(not ForeverWhisperWindow.latest:IsShown())
+local bottomPixels=log:GetVerticalScroll()
+log.scripts.OnMouseWheel(log,1)
+assert(log:GetVerticalScroll()<bottomPixels,"First wheel step did not move the chat")
+local firstWheel=log:GetVerticalScroll()
+log.rows[#log.lines].body.scripts.OnMouseWheel(nil,1)
+assert(log:GetVerticalScroll()<firstWheel,"Wheel over a bubble did not move immediately")
+log.scripts.OnMouseWheel(log,-1)
+assert(math.abs(log:GetVerticalScroll()-firstWheel)<0.001,"Wheel direction did not reverse consistently")
+click("Latest messages")
 click("More ...")
 click("Ignore player...")
 assert(popup.which=="FOREVERWHISPER_IGNORE" and popup.data=="Alice")
@@ -374,14 +396,9 @@ rightClick("Bob");click("Report / WoW player menu...")
 assert(nativeLink.link:find("player:Bob:",1,true) and nativeLink.button=="RightButton")
 UnitPopup_OpenMenu=native
 click("Settings")
+local nextTheme=ForeverWhisperSettings.themeSelector
+nextTheme.scripts.OnClick(nextTheme);selectDropdown(ForeverWhisperDB.theme)
 local geometryObjects=#objects
-local nextTheme
-for _,o in ipairs(objects) do
-    if o.kind=="FontString" and o.text:find("Theme: ",1,true)==1 then
-        for _,b in ipairs(objects) do if b.parent==o.parent and b.text==">" then nextTheme=b end end
-    end
-end
-assert(nextTheme)
 click("Preview art")
 local artPreview=ForeverWhisperArtPreview
 assert(artPreview:IsShown())
@@ -400,6 +417,7 @@ ForeverWhisperDB.opacity=0.94
 local artNames={"IronCorner","FrostCorner",false,"ForestCorner","DoomCorner","IronCorner","CelestialCorner","CelestialCorner","SakuraCorner"}
 for i=1,9 do
     nextTheme.scripts.OnClick(nextTheme)
+    selectDropdown(ForeverWhisperDB.theme%9+1)
     if ForeverWhisperDB.theme==3 then
         assert(not ForeverWhisperWindow.artCorner.shown and not ForeverWhisperWindow.artHeader.shown)
         assert(not ForeverWhisperWindow.artAmbient.shown and not ForeverWhisperWindow.artSide.shown)
@@ -418,6 +436,7 @@ end
 click("Artwork: On");assert(not ForeverWhisperDB.artwork)
 for i=1,9 do
     nextTheme.scripts.OnClick(nextTheme)
+    selectDropdown(ForeverWhisperDB.theme%9+1)
     assert(not ForeverWhisperWindow.artCorner.shown and not ForeverWhisperWindow.artSide.shown)
     assert(not ForeverWhisperWindow.artAmbient.shown and not ForeverWhisperWindow.artHeader.shown)
 end
@@ -825,6 +844,7 @@ local function sidebarKeys()
     return keys
 end
 win.contactCount.scripts.OnClick()
+selectDropdown("name")
 assert(ForeverWhisperDB.contactSort=="name")
 local keys=sidebarKeys()
 local previousName
@@ -836,8 +856,8 @@ for _,key in ipairs(keys) do
         previousName=name
     end
 end
-win.contactCount.scripts.OnClick();assert(ForeverWhisperDB.contactSort=="online")
-win.contactCount.scripts.OnClick();assert(ForeverWhisperDB.contactSort=="recent")
+win.contactCount.scripts.OnClick();selectDropdown("online");assert(ForeverWhisperDB.contactSort=="online")
+win.contactCount.scripts.OnClick();selectDropdown("recent");assert(ForeverWhisperDB.contactSort=="recent")
 -- Online popups share geometry but never replace a whisper or create fake chat history.
 local alice=ForeverWhisperDB.conversations.alice
 alice.notifyOnline,alice.muted=true,nil
@@ -929,8 +949,33 @@ local general=ForeverWhisperGeneralOptions
 local playedSounds={}
 function PlaySound(id) playedSounds[#playedSounds+1]=id;return true end
 general.soundChoice.scripts.OnClick()
+selectDropdown(2)
 click("Listen")
 assert(playedSounds[#playedSounds]==8960 and not ForeverWhisperDB.sound)
+local playedFiles={}
+function PlaySoundFile(file) playedFiles[#playedFiles+1]=file;return true,99 end
+general.soundChoice.scripts.OnClick()
+local soundMenu=ForeverWhisperDropdown
+assert(soundMenu.search:IsShown() and not soundMenu.search.focus)
+soundMenu.search:SetText("gong")
+assert(soundMenu.rows[1].entry.value==7)
+soundMenu.rows[1].preview.scripts.OnClick(soundMenu.rows[1].preview)
+assert(playedFiles[#playedFiles]==565564 and ForeverWhisperDB.soundChoice==2,"Sound preview changed saved selection")
+soundMenu.search:SetText("")
+soundMenu.scripts.OnMouseWheel(soundMenu,-0.25)
+assert(soundMenu.offset==3 and soundMenu.rows[1].entry,"Fractional wheel delta broke the sound list")
+GetMouseFoci=function() return {UIParent} end
+event("GLOBAL_MOUSE_DOWN","LeftButton")
+assert(not soundMenu:IsShown() and ForeverWhisperDB.soundChoice==2)
+GetMouseFoci=nil
+local media={HashTable=function() return {["Hey!"]="Interface/AddOns/SoundPack/Hey.ogg"} end,
+    Fetch=function(_,kind,name) if name=="Hey!" then return "Interface/AddOns/SoundPack/Hey.ogg" end end}
+function LibStub() return media end
+general.soundChoice.scripts.OnClick();selectDropdown("lsm:Hey!")
+click("Listen")
+assert(playedFiles[#playedFiles]=="Interface/AddOns/SoundPack/Hey.ogg")
+LibStub=nil
+general.soundChoice.scripts.OnClick();selectDropdown(2)
 click("Done");click("Back")
 ForeverWhisperDB.sound=true
 event("CHAT_MSG_WHISPER","Selected sound","SoundTester")
@@ -1041,6 +1086,7 @@ for game_locale, choice, spanish in (
         assert(panel:IsShown())
         local oldChoice=ForeverWhisperDB.language
         panel.languageChoice.scripts.OnClick()
+        selectDropdown(oldChoice=="auto" and "es" or (oldChoice=="es" and "en" or "auto"))
         assert(ForeverWhisperDB.language~=oldChoice,"Language choice did not persist")
         assert(not requestedReload,"Changing the language forced an unexpected UI reload")
         assert(win.settingsButton.text==(spanish and "Volver" or "Back"),"Language changed before the requested reload")

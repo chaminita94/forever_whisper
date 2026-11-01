@@ -15,14 +15,22 @@
 
 ## Sounds
 
-- Add five built-in WoW alert sounds: default whisper, ready check, raid warning, map ping, and friend alert.
+- Expand to 18 native WoW sounds, including drum, troll gong, hunting/war horns, alarms, boss warnings, character greetings, and warning voices. The original five choices keep their saved indices.
 - Add a Listen button to preview the selected sound without enabling notifications.
-- Respect the main whisper-sound toggle and per-contact mute. No external audio files or sound libraries are needed.
+- Respect the main whisper-sound toggle, the SFX audio channel, and per-contact mute. No bundled audio files or required sound library.
+- Offer sounds already registered by other addons through LibSharedMedia when available. External selections are saved by name; missing assets fall back safely for notifications.
 
 ## Minimal theme
 
 - Replace the similar Plum theme with Minimal: neutral flat colors, no corner/header/background artwork, no decorative message rails, and no top accent stripe.
 - Minimal stays undecorated even when global artwork is enabled. Switching to another theme restores that theme's art without changing the global preference.
 - Preview shows a no-artwork notice and hides irrelevant brightness controls for Minimal.
+
+## Dropdowns and scrolling
+
+- Replace cycling selectors with direct dropdown choices for theme, font, language, sound, contact order, and online-alert destination. Sliders and boolean toggles remain direct controls.
+- Long dropdowns have a text filter and mouse-wheel scrolling. Sound rows offer preview buttons that do not change the saved selection.
+- Dismiss menus on outside clicks or hiding the owner; do not steal composer focus.
+- Scroll the transcript by pixel distance on the first wheel step, including over message bubbles, rather than by whole-message boundaries. Preserve unread behavior and the Latest messages action without idle animation updates.
 
 Not yet published to CurseForge.

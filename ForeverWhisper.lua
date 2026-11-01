@@ -46,13 +46,63 @@ NS.AlertSounds = {
     {"Default whisper", "TELL_MESSAGE", 3081}, {"Ready check", "READY_CHECK", 8960},
     {"Raid warning", "RAID_WARNING", 8959}, {"Map ping", "MAP_PING", 3175},
     {"Friend alert", "UI_BNET_TOAST", 18019},
+    {"Drum hit", "file", 566027}, {"Troll gong", "file", 565564},
+    {"Hunting horn", "file", 567084}, {"War horn", "file", 598196},
+    {"Alarm clock", "ALARM_CLOCK_WARNING_1", 18871}, {"Alarm bell", "ALARM_CLOCK_WARNING_2", 12867},
+    {"Urgent alarm", "ALARM_CLOCK_WARNING_3", 12889}, {"Boss warning", "RAID_BOSS_EMOTE_WARNING", 12197},
+    {"Boss whisper", "UI_RAID_BOSS_WHISPER_WARNING", 37666},
+    {"Hello (human)", "file", 540674}, {"Hello (gnome)", "file", 540490},
+    {"Beware (voice)", "file", 543587}, {"Run away (voice)", "file", 552035},
 }
-function NS.PlayAlertSound()
-    if not PlaySound then return end
-    local choice = NS.AlertSounds[tonumber(db.soundChoice) or 1] or NS.AlertSounds[1]
-    local id = SOUNDKIT and SOUNDKIT[choice[2]] or choice[3]
-    local ok, played = pcall(PlaySound, id)
-    if (not ok or played == false) and id ~= 3081 then pcall(PlaySound, 3081) end
+function NS.SharedMedia()
+    if not LibStub then return end
+    local ok, media=pcall(function() return LibStub("LibSharedMedia-3.0",true) end)
+    if ok then return media end
+end
+function NS.SoundLabel(value)
+    if type(value)=="string" and value:sub(1,4)=="lsm:" then return "SharedMedia: "..value:sub(5) end
+    local choice=NS.AlertSounds[tonumber(value) or 1] or NS.AlertSounds[1]
+    return NS.L[choice[1]]
+end
+function NS.PlayAlertSound(value, preview)
+    if type(value)~="number" and type(value)~="string" then value=db.soundChoice end
+    local play, id
+    if type(value)=="string" and value:sub(1,4)=="lsm:" then
+        local media=NS.SharedMedia()
+        id=media and media:Fetch("sound",value:sub(5),true)
+        play=PlaySoundFile
+    else
+        local choice=NS.AlertSounds[tonumber(value) or 1] or NS.AlertSounds[1]
+        id=choice[2]=="file" and choice[3] or (SOUNDKIT and SOUNDKIT[choice[2]] or choice[3])
+        play=choice[2]=="file" and PlaySoundFile or PlaySound
+    end
+    if preview and NS.previewSound and StopSound then pcall(StopSound,NS.previewSound);NS.previewSound=nil end
+    local ok,played,handle=false,false,nil
+    if play and id then ok,played,handle=pcall(play,id,"SFX") end
+    if ok and played~=false then
+        if preview then NS.previewSound=handle end
+        return true
+    end
+    if preview then DEFAULT_CHAT_FRAME:AddMessage("Forever Whisper: "..NS.L["This sound is unavailable on this client."])
+    elseif PlaySound then pcall(PlaySound,SOUNDKIT and SOUNDKIT.TELL_MESSAGE or 3081,"SFX") end
+    return false
+end
+function NS.SoundOptions()
+    local entries={}
+    local function add(text,value)
+        entries[#entries+1]={text=text,value=value,preview=function() NS.PlayAlertSound(value,true) end}
+    end
+    for i,choice in ipairs(NS.AlertSounds) do add(NS.L[choice[1]],i) end
+    local media=NS.SharedMedia()
+    if media then
+        local names={}
+        for name,data in pairs(media:HashTable("sound") or {}) do
+            if name~="None" and data~=1 then names[#names+1]=name end
+        end
+        table.sort(names)
+        for _,name in ipairs(names) do add("SharedMedia: "..name,"lsm:"..name) end
+    end
+    return entries
 end
 
 local fonts = {
@@ -289,6 +339,107 @@ local function validPin(mapID, x, y)
     return type(mapID) == "number" and mapID > 0 and mapID <= 100000
         and mapID == math.floor(mapID) and type(x) == "number" and type(y) == "number"
         and x >= 0 and x <= 1 and y >= 0 and y <= 1
+end
+
+function NS.OpenDropdown(owner, entries, selected, choose)
+    local menu = NS.dropdownMenu
+    if menu and menu:IsShown() and menu.owner == owner then menu:Hide(); return end
+    if not menu then
+        menu = CreateFrame("Frame", "ForeverWhisperDropdown", window)
+        NS.dropdownMenu = menu
+        menu:SetFrameStrata("FULLSCREEN_DIALOG")
+        menu:SetClampedToScreen(true)
+        menu:EnableMouse(true)
+        menu.bg = fill(menu, 0.05, 0.08, 0.12, 1)
+        menu.rows = {}
+        menu.search = NS.TrackEditBox(CreateFrame("EditBox", nil, menu))
+        menu.search:SetPoint("TOPLEFT", 8, -8)
+        menu.search:SetPoint("TOPRIGHT", -8, -8)
+        menu.search:SetHeight(26)
+        menu.search:SetAutoFocus(false)
+        menu.search:SetFont("Fonts\\ARIALN.TTF", 12, "")
+        menu.search:SetTextInsets(8, 8, 0, 0)
+        fill(menu.search, 0.12, 0.16, 0.21, 1)
+        menu.search.hint = label(menu.search, NS.L["Filter options..."], 11, "LEFT", 8, 0)
+        menu.footer = label(menu, "", 10, "BOTTOMLEFT", 10, 7)
+        function menu:Refresh()
+            local query = self.search:GetText():lower()
+            local filtered = {}
+            for _, entry in ipairs(self.entries or {}) do
+                if query == "" or entry.text:lower():find(query, 1, true) then filtered[#filtered+1] = entry end
+            end
+            self.offset = clamp(self.offset or 0, 0, math.max(0, #filtered-10))
+            local top = self.search:IsShown() and 40 or 8
+            local visible = math.min(10, #filtered)
+            self:SetHeight(top + visible*28 + 24)
+            self.footer:SetText(#filtered==0 and NS.L["No matches"] or (#filtered>10 and NS.L["Mouse wheel to scroll"] or ""))
+            for i, row in ipairs(self.rows) do
+                local entry = filtered[i+self.offset]
+                row.entry = entry
+                row:SetShown(entry ~= nil and i<=visible)
+                if entry then
+                    row:ClearAllPoints()
+                    row:SetPoint("TOPLEFT", 6, -top-(i-1)*28)
+                    row:SetPoint("TOPRIGHT", -6, -top-(i-1)*28)
+                    row:SetHeight(26)
+                    row:SetText((entry.value==self.selected and "* " or "  ") .. entry.text)
+                    row.preview:SetShown(entry.preview ~= nil)
+                    row.preview.entry = entry
+                end
+            end
+        end
+        menu.search:SetScript("OnTextChanged", function(self)
+            self.hint:SetShown(self:GetText()=="")
+            menu.offset=0;menu:Refresh()
+        end)
+        menu.search:SetScript("OnEscapePressed", function() menu:Hide() end)
+        for i=1,10 do
+            local row = button(menu, "", 200, 26, function(self)
+                local entry = self.entry
+                if entry then local callback=menu.choose; menu:Hide();callback(entry.value) end
+            end)
+            row.fontText:ClearAllPoints()
+            row.fontText:SetPoint("LEFT", 8, 0)
+            row.fontText:SetPoint("RIGHT", -36, 0)
+            row.fontText:SetJustifyH("LEFT")
+            row.fontText:SetWordWrap(false)
+            row:SetScript("OnMouseDown", function() end)
+            row:SetScript("OnMouseUp", function() end)
+            row:EnableMouseWheel(true)
+            row:SetScript("OnMouseWheel", function(_,delta) menu:GetScript("OnMouseWheel")(menu,delta) end)
+            row.preview=button(row, ">", 24, 22, function(self)
+                if self.entry and self.entry.preview then self.entry.preview() end
+            end)
+            row.preview:SetPoint("RIGHT", -2, 0)
+            menu.rows[i]=row
+        end
+        menu:EnableMouseWheel(true)
+        menu:SetScript("OnMouseWheel", function(self, delta)
+            if delta==0 then return end
+            self.offset=self.offset+(delta>0 and -3 or 3);self:Refresh()
+        end)
+        menu:SetScript("OnHide", function(self)
+            self.search:ClearFocus();self.owner=nil
+            if NS.previewSound and StopSound then pcall(StopSound,NS.previewSound);NS.previewSound=nil end
+        end)
+        if UISpecialFrames then UISpecialFrames[#UISpecialFrames+1]="ForeverWhisperDropdown" end
+    end
+    menu:Hide()
+    if not owner.dropdownHideHook then
+        owner.dropdownHideHook=true
+        owner:HookScript("OnHide",function(self) if menu.owner==self then menu:Hide() end end)
+    end
+    menu.owner,menu.entries,menu.selected,menu.choose=owner,entries,selected,choose
+    menu.offset=0
+    menu.search:SetText("")
+    for index, entry in ipairs(entries) do if entry.value==selected then menu.offset=math.max(0,index-5);break end end
+    menu.search:SetShown(#entries>10)
+    menu:SetWidth(math.min(440, math.max(220, owner:GetWidth())))
+    local t=themes[db.theme]
+    menu.bg:SetColorTexture(t[2],t[3],t[4],1)
+    menu:ClearAllPoints()
+    menu:SetPoint("TOPLEFT",owner,"BOTTOMLEFT",0,-4)
+    menu:Show();menu:Refresh()
 end
 
 local function renderMapPins(text)
@@ -1609,9 +1760,9 @@ local function makeWindow()
     filter:SetScript("OnEscapePressed", function(self) self:SetText(""); self:ClearFocus() end)
     window.contactFilter = filter
     window.contactCount = button(sidebar, NS.L["Recent"], 124, 24, function()
-        db.contactSort = db.contactSort == "recent" and "name" or (db.contactSort == "name" and "online" or "recent")
-        contactOffset = 0
-        refreshContacts()
+        NS.OpenDropdown(window.contactCount, {
+            {text=NS.L["Recent"],value="recent"}, {text="A-Z",value="name"}, {text=NS.L["Online first"],value="online"},
+        }, db.contactSort, function(value) db.contactSort=value;contactOffset=0;refreshContacts() end)
     end)
     window.contactCount:SetPoint("TOPLEFT", 12, -49)
     window.contactCount:SetScript("OnEnter", function(self)
@@ -1758,7 +1909,7 @@ local function makeWindow()
     transcript:SetFont(fonts[db.font][2], db.fontSize, "")
     transcript:EnableMouseWheel(true)
     transcript:SetScript("OnMouseWheel", function(self, delta)
-        if delta > 0 then self:ScrollUp() else self:ScrollDown() end
+        self:ScrollPixels(delta)
         if self:GetScrollOffset() == 0 and current and db.conversations[current] then
             db.conversations[current].unread = 0
             refreshContacts(); refreshMinimap()
@@ -2215,6 +2366,7 @@ local function makeWindow()
     resize:SetScript("OnMouseUp", finishResize)
     palette:Hide()
     window:SetScript("OnHide", function()
+        if NS.dropdownMenu then NS.dropdownMenu:Hide() end
         window:EndCursorDrag()
         if window.urlCopy then window.urlCopy:Hide() end
         NS.unreadBoundary, NS.jumpToUnread = nil, nil
@@ -2321,24 +2473,23 @@ local function makeSettings()
         :SetTextColor(0.60, 0.77, 0.86)
     settings.selectorBackgrounds = {}
     local function selector(parent, field, choices, title, apply)
-        local box = CreateFrame("Frame", nil, parent)
+        local box
+        local function change(delta, selected)
+            db[field] = selected or ((db[field] - 1 + delta + #choices) % #choices + 1)
+            box:SetText(title .. ": " .. NS.L[choices[db[field]][1]] .. "  v")
+            apply()
+        end
+        box = button(parent, "", 200, 31, function()
+            local entries={}
+            for i,choice in ipairs(choices) do entries[#entries+1]={text=NS.L[choice[1]],value=i} end
+            NS.OpenDropdown(box,entries,db[field],function(value) change(0,value) end)
+        end)
         box:SetPoint("TOPLEFT")
         box:SetPoint("TOPRIGHT")
         box:SetHeight(31)
-        settings.selectorBackgrounds[#settings.selectorBackgrounds + 1] = fill(box, 0.12, 0.18, 0.23, 1)
-        local value = label(box, "", 13, "CENTER", 0, 0)
-        value:SetWidth(185)
-        value:SetJustifyH("CENTER")
-        local function change(delta)
-            db[field] = (db[field] - 1 + delta + #choices) % #choices + 1
-            value:SetText(title .. ": " .. NS.L[choices[db[field]][1]])
-            apply()
-        end
-        local previous = button(box, "<", 28, 27, function() change(-1) end)
-        previous:SetPoint("LEFT", 2, 0)
-        local nextChoice = button(box, ">", 28, 27, function() change(1) end)
-        nextChoice:SetPoint("RIGHT", -2, 0)
-        value:SetText(title .. ": " .. NS.L[choices[db[field]][1]])
+        settings.selectorBackgrounds[#settings.selectorBackgrounds + 1] = box.bg
+        settings[field .. "Selector"] = box
+        box:SetText(title .. ": " .. NS.L[choices[db[field]][1]] .. "  v")
         return function(delta) change(delta) end
     end
     local fontChoice = CreateFrame("Frame", nil, settings)
@@ -2366,24 +2517,25 @@ local function makeSettings()
             fill(panel, 0.05, 0.08, 0.12, 1)
             label(panel, NS.L["Sound and language"], 15, "TOPLEFT", 16, -14)
             local function soundCaption()
-                local entry = NS.AlertSounds[tonumber(db.soundChoice) or 1] or NS.AlertSounds[1]
-                panel.soundChoice:SetText(NS.L["Whisper sound"] .. ": " .. NS.L[entry[1]])
+                panel.soundChoice:SetText(NS.L["Whisper sound"] .. ": " .. NS.SoundLabel(db.soundChoice) .. "  v")
             end
             panel.soundChoice = button(panel, "", 280, 28, function()
-                db.soundChoice = (tonumber(db.soundChoice) or 1) % #NS.AlertSounds + 1
-                soundCaption()
+                NS.OpenDropdown(panel.soundChoice,NS.SoundOptions(),db.soundChoice,function(value)
+                    db.soundChoice=value;soundCaption()
+                end)
             end)
             panel.soundChoice:SetPoint("TOPLEFT", 16, -48)
             soundCaption()
-            local listen = button(panel, NS.L["Listen"], 80, 28, NS.PlayAlertSound)
+            local listen = button(panel, NS.L["Listen"], 80, 28, function() NS.PlayAlertSound(db.soundChoice,true) end)
             listen:SetPoint("TOPRIGHT", -16, -48)
             local function languageCaption()
                 local name = db.language == "es" and "Español" or (db.language == "en" and "English" or NS.L["Automatic"])
-                panel.languageChoice:SetText(NS.L["Language"] .. ": " .. name)
+                panel.languageChoice:SetText(NS.L["Language"] .. ": " .. name .. "  v")
             end
             panel.languageChoice = button(panel, "", 240, 28, function()
-                db.language = db.language == "auto" and "es" or (db.language == "es" and "en" or "auto")
-                languageCaption()
+                NS.OpenDropdown(panel.languageChoice,{
+                    {text=NS.L["Automatic"],value="auto"}, {text="Español",value="es"}, {text="English",value="en"},
+                },db.language,function(value) db.language=value;languageCaption() end)
             end)
             panel.languageChoice:SetPoint("TOPLEFT", 16, -92)
             languageCaption()
@@ -2473,11 +2625,15 @@ local function makeSettings()
             panel.locked = check(checks, 2, NS.L["Lock position and size"], "popupLocked", apply)
             local modeNames = { popup = NS.L["Popup"], chat = NS.L["Chat"], both = NS.L["Popup + Chat"] }
             panel.onlineMode = button(panel, "", 328, 26, function()
-                db.onlineNotifyMode = db.onlineNotifyMode == "popup" and "chat" or (db.onlineNotifyMode == "chat" and "both" or "popup")
-                panel.onlineMode:SetText(NS.L["Online notifications: "] .. modeNames[db.onlineNotifyMode])
+                NS.OpenDropdown(panel.onlineMode,{
+                    {text=modeNames.popup,value="popup"}, {text=modeNames.chat,value="chat"}, {text=modeNames.both,value="both"},
+                },db.onlineNotifyMode,function(value)
+                    db.onlineNotifyMode=value
+                    panel.onlineMode:SetText(NS.L["Online notifications: "] .. modeNames[value] .. "  v")
+                end)
             end)
             panel.onlineMode:SetPoint("TOPLEFT", 16, -230)
-            panel.onlineMode:SetText(NS.L["Online notifications: "] .. (modeNames[db.onlineNotifyMode] or NS.L["Popup"]))
+            panel.onlineMode:SetText(NS.L["Online notifications: "] .. (modeNames[db.onlineNotifyMode] or NS.L["Popup"]) .. "  v")
             local previewButton = button(panel, NS.L["Preview / move"], 124, 28, function()
                 panel:Hide()
                 if combatPreview then combatPreview:Arrange() end
@@ -2558,6 +2714,7 @@ local function makeSettings()
 end
 
 showView = function(view)
+    if NS.dropdownMenu then NS.dropdownMenu:Hide() end
     activeView = view
     if view ~= "chat" and window.urlCopy then window.urlCopy:Hide() end
     if view ~= "settings" and settings and settings.popupOptions then settings.popupOptions:Hide() end
@@ -2799,6 +2956,8 @@ StaticPopupDialogs["FOREVERWHISPER_DELETE"] = {
 }
 FW:SetScript("OnEvent", function(_, event, ...)
     if event == "GLOBAL_MOUSE_DOWN" then
+        local menu=NS.dropdownMenu
+        if menu and menu:IsShown() and not NS.MouseInsideRoots({menu,menu.owner}) then menu:Hide() end
         NS.ReleaseOutsideFocus({window, copyWindow})
     elseif event == "ADDON_LOADED" then
         if ... ~= ADDON then return end

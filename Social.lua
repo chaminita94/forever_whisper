@@ -5,21 +5,25 @@ function NS.TrackEditBox(box)
     NS.editBoxes[#NS.editBoxes + 1] = box
     return box
 end
-function NS.ReleaseOutsideFocus(roots)
+function NS.MouseInsideRoots(roots)
     local foci
     if GetMouseFoci then foci = GetMouseFoci()
     elseif GetMouseFocus then foci = { GetMouseFocus() }
     else
-        for _, root in ipairs(roots) do if root and root:IsShown() and root:IsMouseOver() then return end end
+        for _, root in ipairs(roots) do if root and root:IsShown() and root:IsMouseOver() then return true end end
     end
     if foci and (type(foci) ~= "table" or foci.GetParent) then foci = {foci} end
     for _, focus in ipairs(foci or {}) do
         for _ = 1, 64 do
             if not focus then break end
-            for _, root in ipairs(roots) do if focus == root then return end end
+            for _, root in ipairs(roots) do if focus == root then return true end end
             focus = focus.GetParent and focus:GetParent() or nil
         end
     end
+    return false
+end
+function NS.ReleaseOutsideFocus(roots)
+    if NS.MouseInsideRoots(roots) then return end
     for _, box in ipairs(NS.editBoxes) do if box:HasFocus() then box:ClearFocus() end end
 end
 
