@@ -655,7 +655,8 @@ local function refreshTranscript(preserveScroll, newMessage)
         local body, who, quote = NS.DecodeReply(item.text)
         if who and c.kind == "bnet" then who = NS.BNetDisplayName(who) end
         local quoted = who and ("|cff7fcbbbReply to:|r\n|cff98aaa9" .. NS.Excerpt(quote) .. "|r\n") or ""
-        transcript:AddMessage(dateLine .. heading .. quoted .. prefix .. "|cffd6e1eb  " .. renderEmoji(renderMapPins(body)) .. "|r", item.outgoing, isNew)
+        local rendered = NS.URLs(body, function(text) return renderEmoji(renderMapPins(text)) end)
+        transcript:AddMessage(dateLine .. heading .. quoted .. prefix .. "|cffd6e1eb  " .. rendered .. "|r", item.outgoing, isNew)
         previous = item
     end
     transcript:ScrollToBottom()
@@ -1027,6 +1028,14 @@ local function copyHistory(key)
 end
 
 
+function NS.CopyURLText(text)
+    if not current or not db.conversations[current] then return end
+    copyHistory(current)
+    copyBox:SetText(text)
+    copyBox:SetFocus()
+    copyBox:HighlightText()
+end
+
 local function editContact(key)
     local c = db.conversations[key]
     if not c then return end
@@ -1115,10 +1124,22 @@ local function openMessageMenu(index, owner)
             messageMenu:Hide()
         end)
         reply:SetPoint("TOPLEFT", 8, -42)
+        messageMenu.copyLink = button(messageMenu, "Copy link", 134, 26, function()
+            if db.conversations[messageMenu.key] then
+                NS.CopyURLText(table.concat(messageMenu.urls, "\n"))
+            end
+            messageMenu:Hide()
+        end)
+        messageMenu.copyLink:SetPoint("TOPLEFT", 8, -76)
         if UISpecialFrames then UISpecialFrames[#UISpecialFrames + 1] = "ForeverWhisperMessageMenu" end
     end
     messageMenu.key, messageMenu.message = key, message
     messageMenu.text = c.kind == "bnet" and NS.BNetDisplayMessage(message.text) or message.text
+    local _, urls = NS.URLs((NS.DecodeReply(messageMenu.text)))
+    messageMenu.urls = urls
+    messageMenu.copyLink:SetShown(#urls > 0)
+    messageMenu.copyLink:SetText(#urls > 1 and "Copy links" or "Copy link")
+    messageMenu:SetHeight(#urls > 0 and 112 or 78)
     messageMenu:ClearAllPoints()
     messageMenu:SetPoint("TOPLEFT", owner, "BOTTOMLEFT", 0, 0)
     messageMenu:Show()
@@ -1660,6 +1681,12 @@ local function makeWindow()
     if transcript.SetHyperlinksEnabled then transcript:SetHyperlinksEnabled(true) end
     transcript.onHyperlinkClick = function(self, link, text, mouseButton)
         if messageMenu then messageMenu:Hide() end
+        local encoded = link:match("^fwurl:(.*)$")
+        if encoded then
+            local url = NS.DecodeURL(encoded)
+            if url then NS.CopyURLText(url) end
+            return
+        end
         local key = link:match("^fwplayer:(.+)$")
         if key then
             if mouseButton == "RightButton" then openContactMenu(key, self) end

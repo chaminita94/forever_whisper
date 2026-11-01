@@ -82,6 +82,62 @@ function NS.DecodeReply(text)
     return text
 end
 
+-- URLs stay plain text in saved/sent messages; only the local display gets links.
+local function urlSegments(text, plain, link)
+    local output, position = {}, 1
+    while position <= #text do
+        local start, finish = text:find("%f[%w]https?://[^%s<>|\"']+", position)
+        local ws, we = text:find("%f[%w]www%.[^%s<>|\"']+", position)
+        if ws and (not start or ws < start) then start, finish = ws, we end
+        if not start then output[#output + 1] = plain(text:sub(position)); break end
+        output[#output + 1] = plain(text:sub(position, start - 1))
+        local url = text:sub(start, finish):gsub("[.,;!]+$", "")
+        for _, pair in ipairs({ {"(", ")"}, {"[", "]"}, {"{", "}"} }) do
+            local function count(character)
+                local n = 0
+                for i = 1, #url do if url:sub(i,i) == character then n = n + 1 end end
+                return n
+            end
+            while url:sub(-1) == pair[2] and count(pair[2]) > count(pair[1]) do url = url:sub(1,-2) end
+        end
+        if url:match("^https?://[^/]+") or url:match("^www%.[^%.]+%.") then
+            output[#output + 1] = link(url)
+        else output[#output + 1] = plain(url) end
+        output[#output + 1] = plain(text:sub(start + #url, finish))
+        position = finish + 1
+    end
+    return table.concat(output)
+end
+
+function NS.URLs(text, renderPlain)
+    local found, output, position = {}, {}, 1
+    local function plain(value) return renderPlain and renderPlain(value) or value end
+    local function link(url)
+        found[#found + 1] = url
+        if not renderPlain then return url end
+        local encoded = url:gsub(".", function(c) return string.format("%02x", c:byte()) end)
+        return "|cff72cfff|Hfwurl:" .. encoded .. "|h" .. url .. "|h|r"
+    end
+    -- Do not rewrite Blizzard item/player links, texture escapes, or atlas escapes.
+    while position <= #text do
+        local pipe = text:find("|", position, true)
+        if not pipe then output[#output + 1] = urlSegments(text:sub(position), plain, link); break end
+        output[#output + 1] = urlSegments(text:sub(position, pipe-1), plain, link)
+        local tail = text:sub(pipe)
+        local token = tail:match("^|H.-|h.-|h") or tail:match("^|T.-|t") or tail:match("^|A.-|a")
+        output[#output + 1] = token or "|"
+        position = pipe + (token and #token or 1)
+    end
+    return table.concat(output), found
+end
+
+function NS.DecodeURL(encoded)
+    if #encoded == 0 or #encoded > 4096 or #encoded % 2 ~= 0 or encoded:find("[^%x]") then return end
+    local url = encoded:gsub("%x%x", function(byte) return string.char(tonumber(byte,16)) end)
+    if url:find("[%c%s|]") then return end
+    if url:match("^https?://[^/]+") or url:match("^www%.[^%.]+%.") then return url end
+end
+
 local friends
 function NS.InvalidateFriends() friends = nil end
 function NS.FriendPresence(name)

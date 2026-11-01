@@ -861,10 +861,44 @@ friendRows[1].connected=true;event("FRIENDLIST_UPDATE")
 assert(not toast:IsShown() and #DEFAULT_CHAT_FRAME.lines==onlineChatCount+1)
 alice.notifyOnline,alice.muted=nil,nil
 ForeverWhisperDB.onlineNotifyMode="popup"
+-- URL display/copy stays local and never changes what is sent or saved.
+SlashCmdList.FOREVERWHISPER("LinkTester")
+local imageURL="https://i.imgur.com/JBkdqbz.png"
+local linkedText=imageURL.." Look at this chad"
+composer:SetText(linkedText);click("Send")
+assert(sent[#sent].text==linkedText,"URL markup leaked into the sent whisper")
+event("CHAT_MSG_WHISPER_INFORM",linkedText,"LinkTester")
+local urlLink=log.lines[#log.lines]:match("|H(fwurl:[^|]+)|h")
+assert(urlLink and ForeverWhisperDB.conversations.linktester.messages[1].text==linkedText)
+log.onHyperlinkClick(log,urlLink,imageURL,"LeftButton")
+assert(find("EditBox",imageURL).focus,"Clicking URL did not focus its copy field")
+click("Close")
+log.rows[#log.lines].body.scripts.OnMouseDown(nil,"RightButton");click("Copy link")
+find("EditBox",imageURL);click("Close")
+event("CHAT_MSG_WHISPER","See https://example.com/a?x=1&y=2 and www.example.org/test.","LinkTester")
+log.rows[#log.lines].body.scripts.OnMouseDown(nil,"RightButton");click("Copy links")
+find("EditBox","https://example.com/a?x=1&y=2\nwww.example.org/test");click("Close")
+event("CHAT_MSG_WHISPER","[Reply to: old excerpt] "..imageURL,"LinkTester")
+log.rows[#log.lines].body.scripts.OnMouseDown(nil,"RightButton");click("Copy link")
+find("EditBox",imageURL);click("Close")
 -- No idle per-frame handlers; minimap drag adds one only during dragging.
 for _,o in ipairs(objects) do assert(not o.scripts.OnUpdate,"Unexpected idle polling") end
 ''')
 catalogue = source.split("-- BEGIN BUNDLED EMOJI", 1)[1].split("-- END BUNDLED EMOJI", 1)[0]
+lua.execute(r'''
+local ns=...
+local function identity(text) return text end
+local text,urls=ns.URLs("(https://example.com/a_(b)). www.example.org/path,",identity)
+assert(#urls==2 and urls[1]=="https://example.com/a_(b)" and urls[2]=="www.example.org/path")
+local native="|Hitem:123|h[Gear https://example.com/not-a-web-link]|h |TInterface/path.tga:16|t"
+local rendered,found=ns.URLs(native,identity)
+assert(rendered==native and #found==0,"Native item links/textures were rewritten")
+local unicode="https://example.com/caf"..string.char(195,169).."?a=1&b=2"
+local display=ns.URLs(unicode,identity)
+local encoded=display:match("|Hfwurl:([^|]+)|h")
+assert(ns.DecodeURL(encoded)==unicode,"URL bytes/query string did not round-trip")
+assert(not ns.DecodeURL("zz") and not ns.DecodeURL("a") and not ns.DecodeURL("6a6176617363726970743a616c657274283129"))
+''',ns)
 lua.execute(r'''
 local ns=...
 local saved={
