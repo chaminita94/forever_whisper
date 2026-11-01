@@ -2,12 +2,15 @@
 
 A customizable messenger for World of Warcraft whispers, with persistent conversations, themed artwork, and combat-friendly behavior.
 
-**Current source: 0.15.0-beta6.** The recent Classic Era and Battle.net changes need further in-game testing before a stable release.
+**Current source: 0.15.0-beta7.** The recent Classic Era and Battle.net changes need further in-game testing before a stable release.
 
 ## Features
 
 - Incoming messages on the left and your replies on the right, with sender labels and timestamps.
 - Character and Battle.net conversations, saved message history, unread indicators, and pinned chats.
+- A New messages divider marks the unread boundary. Opening a pending chat jumps to it; incoming whispers preserve your position while reading older messages.
+- Click the sidebar sort button to cycle Recent, A-Z, and Online first; pinned chats stay at the top.
+- Mute notifications per contact from the right-click menu. Muted messages remain saved and counted as unread while not being viewed.
 - Search by contact name, local nickname, private note, or message text.
 - Set a nickname and private note from a contact's right-click menu; these stay local.
 - Choose Notify when online individually for the contacts you want to watch. Alerts appear in WoW chat on known offline-to-online transitions and follow the addon sound setting. Unknown contacts require available friend/guild status.
@@ -29,7 +32,7 @@ Download a packaged release and extract the `ForeverWhisper` folder into your cl
 
 The main TOC targets Forever (16001); the Classic TOC targets Classic Era (11509). Compatibility with other clients is not claimed. Check the file's supported game versions when downloading.
 
-Open with `/fw` or the minimap button. Use **Settings > Arrange popup** or `/fw popup` to preview and position combat notifications. Drag the popup to move it, or its bottom-right grip to resize it, including during combat. Geometry saves automatically; `/fw popup reset` restores the default layout. The dismissal timer pauses during adjustments. Close the preview with X or right-click. Settings controls appearance, artwork, history, and behavior. Settings and histories are stored locally in WoW SavedVariables.
+Open with `/fw` or the minimap button. Use **Settings > Arrange popup** or `/fw popup` to preview and position combat notifications. Drag the popup to move it, or its bottom-right grip to resize it, including during combat. Geometry saves automatically; `/fw popup reset` restores the default layout. The dismissal timer pauses during adjustments. **Settings > Popup options** controls duration (3-30 seconds), text size (10-20), name-only display, and locking position and size. Close the preview with X or right-click. Settings controls appearance, artwork, history, and behavior. Settings and histories are stored locally in WoW SavedVariables.
 
 ## Performance
 

@@ -7,7 +7,7 @@ function NS.CreateTranscript(parent, getStyle)
     content:SetPoint("TOPLEFT")
     content:SetSize(1, 1)
     view:SetScrollChild(content)
-    view.lines, view.rows, view.directions = {}, {}, {}
+    view.lines, view.rows, view.directions, view.dividers = {}, {}, {}, {}
     view.offset, view.totalHeight = 0, 0
     local measure = content:CreateFontString(nil, "OVERLAY")
     measure:Hide()
@@ -36,6 +36,15 @@ function NS.CreateTranscript(parent, getStyle)
         measure:SetWidth(width - 24)
         measure:SetWordWrap(true)
         local height = math.max(size + 20, measure:GetStringHeight() + 22)
+        row.top = view.totalHeight
+        row.divider:SetShown(view.dividers[index])
+        row.divider:ClearAllPoints()
+        row.divider:SetPoint("TOPLEFT", content, "TOPLEFT", 4, -view.totalHeight)
+        row.divider:SetSize(available, 24)
+        row.divider.label:SetTextColor(t[5], t[6], t[7])
+        row.divider.left:SetColorTexture(t[5], t[6], t[7], 0.45)
+        row.divider.right:SetColorTexture(t[5], t[6], t[7], 0.45)
+        if view.dividers[index] then view.totalHeight = view.totalHeight + 24 end
         row:ClearAllPoints()
         row:SetPoint(outgoing and "TOPRIGHT" or "TOPLEFT", content,
             outgoing and "TOPRIGHT" or "TOPLEFT", outgoing and -4 or 4, -view.totalHeight)
@@ -63,14 +72,28 @@ function NS.CreateTranscript(parent, getStyle)
     end
     function view:Clear()
         for _, row in ipairs(self.rows) do row:Hide() end
-        self.lines, self.directions = {}, {}
+        self.lines, self.directions, self.dividers = {}, {}, {}
         self.totalHeight, self.offset = 0, 0
     end
-    function view:AddMessage(text, outgoing)
+    function view:AddMessage(text, outgoing, divider)
         local index = #self.lines + 1
         self.lines[index], self.directions[index] = text, not not outgoing
+        self.dividers[index] = not not divider
         if not self.rows[index] then
             local row = CreateFrame("Frame", nil, content)
+            row.divider = CreateFrame("Frame", nil, row)
+            row.divider.label = row.divider:CreateFontString(nil, "OVERLAY")
+            row.divider.label:SetFont("Fonts\\ARIALN.TTF", 11, "")
+            row.divider.label:SetPoint("CENTER")
+            row.divider.label:SetText("New messages")
+            row.divider.left = row.divider:CreateTexture(nil, "ARTWORK")
+            row.divider.left:SetPoint("LEFT")
+            row.divider.left:SetPoint("RIGHT", row.divider.label, "LEFT", -10, 0)
+            row.divider.left:SetHeight(1)
+            row.divider.right = row.divider:CreateTexture(nil, "ARTWORK")
+            row.divider.right:SetPoint("LEFT", row.divider.label, "RIGHT", 10, 0)
+            row.divider.right:SetPoint("RIGHT")
+            row.divider.right:SetHeight(1)
             row.bg = row:CreateTexture(nil, "BACKGROUND")
             row.bg:SetAllPoints()
             row.rail = row:CreateTexture(nil, "BORDER")
@@ -123,6 +146,17 @@ function NS.CreateTranscript(parent, getStyle)
         self:SetVerticalScroll(math.max(0, math.min(bottom - self:GetHeight(), self.totalHeight - self:GetHeight())))
     end
     function view:ScrollToBottom() self:SetScrollOffset(0) end
+    function view:ScrollToMessage(index)
+        local row = self.rows[index]
+        if not row then return end
+        local top = math.max(0, math.min(row.top, self.totalHeight - self:GetHeight()))
+        local last = index
+        for i = index, #self.lines do
+            if self.rows[i].top < top + self:GetHeight() then last = i else break end
+        end
+        self.offset = #self.lines - last
+        self:SetVerticalScroll(top)
+    end
     function view:ScrollUp() self:SetScrollOffset(self.offset + 1) end
     function view:ScrollDown() self:SetScrollOffset(self.offset - 1) end
     function view:Restyle()
@@ -208,8 +242,9 @@ function NS.CreateCombatPreview(getStyle, options)
         if self.editing or self.moving or self.resizing then return end
         local serial = self.serial
         local function expire() if toast.serial == serial then toast:Hide() end end
-        if C_Timer and C_Timer.NewTimer then self.timer = C_Timer.NewTimer(7, expire)
-        elseif C_Timer and C_Timer.After then C_Timer.After(7, expire) end
+        local duration = bound(options.popupDuration, 3, 30, 7)
+        if C_Timer and C_Timer.NewTimer then self.timer = C_Timer.NewTimer(duration, expire)
+        elseif C_Timer and C_Timer.After then C_Timer.After(duration, expire) end
     end
     local resize = CreateFrame("Button", nil, toast)
     toast.resizeGrip = resize
@@ -226,14 +261,14 @@ function NS.CreateCombatPreview(getStyle, options)
         if toast:IsShown() then toast:ArmTimer() end
     end
     toast:SetScript("OnDragStart", function(self)
-        if self.resizing then return end
+        if self.resizing or options.popupLocked then return end
         self:CancelTimer()
         self.moving = true
         self:StartMoving()
     end)
     toast:SetScript("OnDragStop", finishInteraction)
     resize:SetScript("OnMouseDown", function(_, mouseButton)
-        if mouseButton ~= "LeftButton" or toast.moving then return end
+        if mouseButton ~= "LeftButton" or toast.moving or options.popupLocked then return end
         local left, top = toast:GetLeft(), toast:GetTop()
         if not left or not top then return end
         local x, y = GetCursorPosition()
@@ -258,6 +293,19 @@ function NS.CreateCombatPreview(getStyle, options)
         self.editing = nil
         self:CancelTimer()
     end)
+    function toast:ApplyOptions()
+        if options.popupLocked then finishInteraction() end
+        self:SetMovable(not options.popupLocked)
+        resize:SetShown(not options.popupLocked)
+        self.preview:SetShown(not options.popupNameOnly)
+        local path = getStyle()
+        local size = bound(options.popupFontSize, 10, 20, 13)
+        self.title:SetFont(path, size + 1, "")
+        self.preview:SetFont(path, size, "")
+        if self.editing then
+            self.note:SetText(options.popupLocked and "Locked - change in Popup options" or "Position and size saved automatically")
+        end
+    end
     function toast:ShowWhisper(author, text)
         self.editing = nil
         self.count, self.serial = self.count + 1, self.serial + 1
@@ -269,6 +317,7 @@ function NS.CreateCombatPreview(getStyle, options)
         self.preview:SetFont(path, math.min(size, 13), "")
         self.preview:SetTextColor(0.84, 0.89, 0.94)
         self.preview:SetText(text)
+        self:ApplyOptions()
         self:Show()
         self.note:SetText("Saved - opens after combat")
         self:ArmTimer()
@@ -278,7 +327,7 @@ function NS.CreateCombatPreview(getStyle, options)
         self:ShowWhisper("Whisper preview", "Drag this popup to move it. Drag the bottom-right corner to change its size.")
         self.editing, self.count = true, 0
         self:CancelTimer()
-        self.note:SetText("Position and size saved automatically")
+        self:ApplyOptions()
     end
     function toast:ResetGeometry()
         self:Reset()
@@ -293,5 +342,6 @@ function NS.CreateCombatPreview(getStyle, options)
         self:Hide()
     end
     toast:Hide()
+    toast:ApplyOptions()
     return toast
 end

@@ -22,6 +22,7 @@ local replyDrafts = {}
 local updateReplyPreview
 local messageMenu, contactEditor
 local watchedPresence = {}
+local contactPresence
 
 local function contactLabel(c)
     return type(c.nickname) == "string" and c.nickname ~= "" and c.nickname or c.name
@@ -36,6 +37,7 @@ local defaults = {
     font = 5, theme = 9, timestamps = true, sound = false,
     keepChat = false, showMinimap = true, minimapAngle = 225,
     conversations = {}, artwork = true, artBrightness = 0.95, combatPreview = true, typing = true,
+    contactSort = "recent", popupDuration = 7, popupFontSize = 13, popupNameOnly = false, popupLocked = false,
 }
 
 local fonts = {
@@ -295,11 +297,24 @@ end
 local function names()
     local result = {}
     for key, conversation in pairs(db.conversations) do
-        result[#result + 1] = { key = key, data = conversation }
+        local entry = { key = key, data = conversation }
+        if db.contactSort == "online" then
+            local online = contactPresence(conversation.name, conversation)
+            entry.rank = online == true and 1 or (online == false and 3 or 2)
+        end
+        result[#result + 1] = entry
     end
     table.sort(result, function(a, b)
         if not not a.data.pinned ~= not not b.data.pinned then
             return not not a.data.pinned
+        end
+        if db.contactSort == "online" then
+            local ar, br = a.rank, b.rank
+            if ar ~= br then return ar < br end
+        end
+        if db.contactSort == "name" or db.contactSort == "online" then
+            local an, bn = contactLabel(a.data):lower(), contactLabel(b.data):lower()
+            if an ~= bn then return an < bn end
         end
         if a.data.last == b.data.last then return a.key < b.key end
         return a.data.last > b.data.last
@@ -365,8 +380,10 @@ local function addMessage(name, message, outgoing, lineID, guid, bnetID)
     while #c.messages > db.historyLimit do
         table.remove(c.messages, 1)
     end
-    if not outgoing and (key ~= current or not window or not window:IsShown() or activeView ~= "chat") then
+    if not outgoing and (key ~= current or not window or not window:IsShown() or activeView ~= "chat"
+        or (transcript and transcript:GetScrollOffset() > 0)) then
         c.unread = (c.unread or 0) + 1
+        if key == current and not NS.unreadBoundary then NS.unreadBoundary = c.messages[#c.messages] end
     end
     refreshMinimap()
     return key, c
@@ -394,7 +411,7 @@ local function rebuildGuildPresence()
     guildPresenceDirty = false
 end
 
-local function contactPresence(name, c)
+contactPresence = function(name, c)
     if c and c.kind == "bnet" then return NS.BNetPresence(c) end
     if guildPresenceDirty then rebuildGuildPresence() end
     local status, area = NS.FriendPresence(name)
@@ -407,7 +424,7 @@ local function refreshWatchedPresence(baseline)
     for key, c in pairs(db.conversations) do
         if c.notifyOnline then
             local online = contactPresence(c.name, c)
-            if not baseline and watchedPresence[key] == false and online == true then
+            if not baseline and not c.muted and watchedPresence[key] == false and online == true then
                 DEFAULT_CHAT_FRAME:AddMessage("|cff72eadbForever Whisper: " .. contactLabel(c) .. " is now online.|r")
                 if db.sound and PlaySound then PlaySound(SOUNDKIT and SOUNDKIT.TELL_MESSAGE or 3081) end
             end
@@ -579,9 +596,23 @@ local function applyTheme()
     end
 end
 
+local function firstUnread(c)
+    local remaining, first = tonumber(c.unread) or 0
+    if remaining <= 0 then return end
+    for i = #c.messages, 1, -1 do
+        if not c.messages[i].outgoing then
+            first = c.messages[i]
+            remaining = remaining - 1
+            if remaining <= 0 then break end
+        end
+    end
+    return first
+end
+
 local function refreshTranscript(preserveScroll, newMessage)
     if not transcript then return end
     local offset = preserveScroll and transcript.GetScrollOffset and transcript:GetScrollOffset() or 0
+    local scrollTop = offset > 0 and transcript:GetVerticalScroll() or nil
     transcript:Clear()
     local c = current and db.conversations[current]
     if window.empty then window.empty:SetShown(not c or #c.messages == 0) end
@@ -597,7 +628,12 @@ local function refreshTranscript(preserveScroll, newMessage)
     if not settings or not settings:IsShown() then window.heading:SetText(contactLabel(c)) end
     refreshPresence()
     if window.pinButton then window.pinButton:SetText(c.pinned and "Unpin" or "Pin") end
-    local previous
+    local previous, dividerIndex
+    if NS.unreadBoundary then
+        local found
+        for _, item in ipairs(c.messages) do if item == NS.unreadBoundary then found = true; break end end
+        if not found then NS.unreadBoundary = firstUnread(c) end
+    end
     for i, item in ipairs(c.messages) do
         local stamp = db.timestamps and ("   |cff778899" .. date("%H:%M", item.at) .. "|r") or ""
         local color = item.outgoing and "|cff89cfff" or "|cffffcf83"
@@ -606,22 +642,27 @@ local function refreshTranscript(preserveScroll, newMessage)
             and "|cff72eadb>> |r" or ""
         local day = date("%d %b", item.at)
         local newDay = not previous or date("%d %b", previous.at) ~= day
-        local group = newDay or previous.outgoing ~= item.outgoing or item.at - previous.at > 120
+        local isNew = item == NS.unreadBoundary
+        if isNew then dividerIndex = i end
+        local group = isNew or newDay or previous.outgoing ~= item.outgoing or item.at - previous.at > 120
         local linkedSpeaker = not item.outgoing and ("|Hfwplayer:" .. current .. "|h" .. speaker .. "|h") or speaker
         local heading = group and (color .. linkedSpeaker .. "|r" .. stamp .. "\n") or ""
         local dateLine = newDay and ("|cff778899" .. day .. "|r\n") or ""
         local body, who, quote = NS.DecodeReply(item.text)
         if who and c.kind == "bnet" then who = NS.BNetDisplayName(who) end
         local quoted = who and ("|cff7fcbbbReply to:|r\n|cff98aaa9" .. NS.Excerpt(quote) .. "|r\n") or ""
-        transcript:AddMessage(dateLine .. heading .. quoted .. prefix .. "|cffd6e1eb  " .. renderEmoji(renderMapPins(body)) .. "|r", item.outgoing)
+        transcript:AddMessage(dateLine .. heading .. quoted .. prefix .. "|cffd6e1eb  " .. renderEmoji(renderMapPins(body)) .. "|r", item.outgoing, isNew)
         previous = item
     end
     transcript:ScrollToBottom()
     if offset > 0 and transcript.SetScrollOffset then transcript:SetScrollOffset(offset + (newMessage and 1 or 0)) end
-    if window.latest then window.latest:SetShown(offset > 0) end
+    if scrollTop then transcript:SetVerticalScroll(math.max(0, math.min(scrollTop, transcript.totalHeight - transcript:GetHeight()))) end
+    if NS.jumpToUnread and dividerIndex then transcript:ScrollToMessage(dividerIndex) end
+    NS.jumpToUnread = nil
     if searchJump and searchJump.key == current and transcript.SetScrollOffset then
         transcript:SetScrollOffset(math.max(0, #c.messages - searchJump.index))
     end
+    if window.latest then window.latest:SetShown(transcript:GetScrollOffset() > 0) end
 end
 
 local function refreshContacts()
@@ -677,13 +718,20 @@ local function refreshContacts()
             b:Hide()
         end
     end
-    if window.contactCount then window.contactCount:SetText("CHATS  /  " .. #sorted) end
+    if window.contactCount then
+        local title = db.contactSort == "name" and "A-Z" or (db.contactSort == "online" and "Online" or "Recent")
+        window.contactCount:SetText(title .. " / " .. #sorted)
+    end
 end
 
 local function selectConversation(key)
     local c = db.conversations[key]
     if not c then return end
+    local sameConversation = current == key
     searchJump = nil
+    if current ~= key then NS.unreadBoundary = nil end
+    local first = firstUnread(c)
+    if first then NS.unreadBoundary, NS.jumpToUnread = first, true end
     if current and input then drafts[current] = input:GetText() end
     if social then social:Stop() end
     current = key
@@ -696,7 +744,7 @@ local function selectConversation(key)
     if actionMenu then actionMenu:Hide() end
     c.unread = 0
     refreshContacts()
-    refreshTranscript()
+    refreshTranscript(sameConversation)
     refreshMinimap()
 end
 
@@ -1220,6 +1268,7 @@ openContactMenu = function(key, owner)
     end
     end -- Character-only friend/ignore/report actions must never target a BattleTag.
     add(c.pinned and "Unpin conversation" or "Pin conversation", function() togglePin(key) end)
+    add(c.muted and "Unmute notifications" or "Mute notifications", function() c.muted = not c.muted or nil end)
     add("Nickname / private note...", function() editContact(key) end)
     add(c.notifyOnline and "Disable online notification" or "Notify when online", function()
         c.notifyOnline = not c.notifyOnline or nil
@@ -1441,8 +1490,19 @@ local function makeWindow()
     end)
     filter:SetScript("OnEscapePressed", function(self) self:SetText(""); self:ClearFocus() end)
     window.contactFilter = filter
-    window.contactCount = label(sidebar, "CHATS", 10, "TOPLEFT", 14, -57)
-    window.contactCount:SetTextColor(0.53, 0.65, 0.77)
+    window.contactCount = button(sidebar, "Recent", 124, 24, function()
+        db.contactSort = db.contactSort == "recent" and "name" or (db.contactSort == "name" and "online" or "recent")
+        contactOffset = 0
+        refreshContacts()
+    end)
+    window.contactCount:SetPoint("TOPLEFT", 12, -49)
+    window.contactCount:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine("Sort: Recent / A-Z / Online first")
+        GameTooltip:AddLine("Pinned conversations stay first", 0.7, 0.8, 0.9)
+        GameTooltip:Show()
+    end)
+    window.contactCount:SetScript("OnLeave", function() GameTooltip:Hide() end)
     newChat = CreateFrame("Frame", nil, sidebar)
     newChat:SetSize(204, 122)
     newChat:SetPoint("TOPLEFT", 8, -78)
@@ -1581,6 +1641,10 @@ local function makeWindow()
     transcript:EnableMouseWheel(true)
     transcript:SetScript("OnMouseWheel", function(self, delta)
         if delta > 0 then self:ScrollUp() else self:ScrollDown() end
+        if self:GetScrollOffset() == 0 and current and db.conversations[current] then
+            db.conversations[current].unread = 0
+            refreshContacts(); refreshMinimap()
+        end
         if window.latest and self.GetScrollOffset then window.latest:SetShown(self:GetScrollOffset() > 0) end
     end)
 
@@ -1608,6 +1672,8 @@ local function makeWindow()
     window.empty:SetTextColor(0.57, 0.69, 0.79)
     window.latest = button(conversationView, "Latest messages", 132, 26, function()
         transcript:ScrollToBottom()
+        if current and db.conversations[current] then db.conversations[current].unread = 0 end
+        refreshContacts(); refreshMinimap()
         searchJump = nil
         window.latest:Hide()
     end)
@@ -2013,6 +2079,7 @@ local function makeWindow()
     resize:SetScript("OnMouseUp", finishResize)
     palette:Hide()
     window:SetScript("OnHide", function()
+        NS.unreadBoundary, NS.jumpToUnread = nil, nil
         finishResize()
         palette:Hide()
         actionMenu:Hide()
@@ -2154,7 +2221,7 @@ local function makeSettings()
     local arrangePopup = button(settings, "Arrange popup", 120, 23, function()
         if combatPreview then combatPreview:Arrange() end
     end)
-    arrangePopup:SetPoint("TOPRIGHT", -26, -278)
+    arrangePopup:SetPoint("TOPRIGHT", -154, -278)
     local function check(parent, rowIndex, text, field, apply)
         local row = CreateFrame("Frame", nil, parent)
         row:SetPoint("TOPLEFT", 0, -(rowIndex - 1) * 25)
@@ -2179,6 +2246,7 @@ local function makeSettings()
             marker:SetShown(db[field])
             if apply then apply() end
         end)
+        return b
     end
     local leftChecks = CreateFrame("Frame", nil, settings)
     leftChecks:SetPoint("TOPLEFT", 26, -308)
@@ -2200,6 +2268,41 @@ local function makeSettings()
         refreshContacts()
         refreshPresence()
     end)
+    local popupOptions = button(settings, "Popup options", 120, 23, function()
+        if not settings.popupOptions then
+            local panel = CreateFrame("Frame", "ForeverWhisperPopupOptions", settings)
+            settings.popupOptions = panel
+            panel:SetSize(360, 290)
+            panel:SetPoint("CENTER", window, "CENTER")
+            panel:SetFrameLevel(window:GetFrameLevel() + 66)
+            panel:EnableMouse(true)
+            fill(panel, 0.05, 0.08, 0.12, 1)
+            label(panel, "Combat popup", 15, "TOPLEFT", 16, -14)
+            local fields = CreateFrame("Frame", nil, panel)
+            fields:SetPoint("TOPLEFT", 16, -48)
+            fields:SetSize(328, 110)
+            local function apply()
+                if combatPreview then combatPreview:ApplyOptions(); combatPreview:ArmTimer() end
+            end
+            panel.durationSlider = slider(fields, 1, "Duration (seconds)", "popupDuration", 3, 30, 1, apply)
+            panel.fontSlider = slider(fields, 2, "Text size", "popupFontSize", 10, 20, 1, apply)
+            local checks = CreateFrame("Frame", nil, panel)
+            checks:SetPoint("TOPLEFT", 16, -170)
+            checks:SetSize(328, 60)
+            panel.nameOnly = check(checks, 1, "Show name only (hide message)", "popupNameOnly", apply)
+            panel.locked = check(checks, 2, "Lock position and size", "popupLocked", apply)
+            local previewButton = button(panel, "Preview / move", 124, 28, function()
+                panel:Hide()
+                if combatPreview then combatPreview:Arrange() end
+            end)
+            previewButton:SetPoint("BOTTOMLEFT", 16, 16)
+            local close = button(panel, "Done", 72, 28, function() panel:Hide() end)
+            close:SetPoint("BOTTOMRIGHT", -16, 16)
+            if UISpecialFrames then UISpecialFrames[#UISpecialFrames + 1] = "ForeverWhisperPopupOptions" end
+        end
+        settings.popupOptions:Show()
+    end)
+    popupOptions:SetPoint("TOPRIGHT", -26, -278)
     local preview = CreateFrame("Frame", nil, settings)
     preview:SetPoint("TOPLEFT", 26, -388)
     preview:SetPoint("TOPRIGHT", -26, -388)
@@ -2266,9 +2369,11 @@ end
 
 showView = function(view)
     activeView = view
+    if view ~= "settings" and settings and settings.popupOptions then settings.popupOptions:Hide() end
     if settings and settings.artPreview then settings.artPreview:Hide() end
     if contactMenu then contactMenu:Hide() end
     if customEditor then customEditor:Hide() end
+    if view ~= "chat" then NS.unreadBoundary, NS.jumpToUnread = nil, nil end
     if view ~= "chat" and input then input:ClearFocus() end
     if view ~= "search" and searchInput then searchInput:ClearFocus() end
     sidebar:SetShown(view == "chat")
@@ -2283,10 +2388,15 @@ showView = function(view)
     window.settingsButton:SetText(view == "settings" and "Back" or "Settings")
     window.searchButton:SetText(view == "search" and "Back" or "Search")
     if view == "chat" then
-        if current and db.conversations[current] then db.conversations[current].unread = 0 end
+        if current and db.conversations[current] then
+            local c = db.conversations[current]
+            local first = firstUnread(c)
+            if first then NS.unreadBoundary, NS.jumpToUnread = first, true end
+            c.unread = 0
+        end
         refreshContacts()
         refreshMinimap()
-        refreshTranscript()
+        refreshTranscript(true)
     elseif view == "settings" then
         window.heading:SetText("Preferences")
     else
@@ -2456,6 +2566,7 @@ StaticPopupDialogs["FOREVERWHISPER_CLEAR"] = {
         if c then
             c.messages = {}
             c.unread = 0
+            if current == key then NS.unreadBoundary, NS.jumpToUnread = nil, nil end
             refreshTranscript()
             refreshContacts()
             refreshMinimap()
@@ -2477,6 +2588,7 @@ StaticPopupDialogs["FOREVERWHISPER_DELETE"] = {
         if messageMenu and messageMenu.key == key then messageMenu:Hide() end
         if searchJump and searchJump.key == key then searchJump = nil end
         if current == key then
+            NS.unreadBoundary, NS.jumpToUnread = nil, nil
             if social then social:Stop() end
             current = nil
             if input then input:SetText(""); input:ClearFocus() end
@@ -2637,8 +2749,8 @@ FW:SetScript("OnEvent", function(_, event, ...)
         end
         if inCombat() then
             if not outgoing then
-                queuedInCombat = true
-                if db.combatPreview and combatPreview then
+                if not db.conversations[key].muted then queuedInCombat = true end
+                if db.combatPreview and combatPreview and not db.conversations[key].muted then
                     combatPreview:ShowWhisper(db.conversations[key].name,
                         renderEmoji(renderMapPins(bnet and NS.BNetDisplayMessage(message) or message)))
                 end
@@ -2651,15 +2763,15 @@ FW:SetScript("OnEvent", function(_, event, ...)
                 elseif not current and activeView == "chat" then
                     selectConversation(key)
                 elseif current == key and activeView == "chat" then
-                    db.conversations[key].unread = 0
+                    if transcript:GetScrollOffset() == 0 then db.conversations[key].unread = 0 end
                     refreshTranscript(true, true)
                 end
                 refreshContacts()
                 refreshMinimap()
             else
-                showConversation(nil, key)
+                if outgoing or not db.conversations[key].muted then showConversation(nil, key) end
             end
-            if not outgoing and db.sound and PlaySound then
+            if not outgoing and db.sound and not db.conversations[key].muted and PlaySound then
                 PlaySound(SOUNDKIT and SOUNDKIT.TELL_MESSAGE or 3081)
             end
         end
@@ -2675,7 +2787,7 @@ FW:SetScript("OnEvent", function(_, event, ...)
             if queuedInCombat then
                 local sorted = names()
                 for _, item in ipairs(sorted) do
-                    if item.data.unread and item.data.unread > 0 then
+                    if not item.data.muted and item.data.unread and item.data.unread > 0 then
                         current = item.key
                         break
                     end

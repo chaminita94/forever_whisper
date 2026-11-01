@@ -1,3 +1,14 @@
+# Forever Whisper 0.15.0-beta7
+
+## Unread divider and notification controls
+
+- Show a themed New messages divider before the first pending incoming message and open unread conversations at that boundary.
+- Preserve the reading position when new whispers arrive while scrolling through history. Latest messages clears the pending count; the divider remains until you leave that conversation.
+- Add Settings > Popup options: duration from 3 to 30 seconds, text size from 10 to 20, show-name-only privacy, and a position/size lock.
+- Add a sidebar sort button cycling Recent, A-Z, and Online first. Pinned conversations remain first in every mode.
+- Add per-contact Mute notifications / Unmute notifications. Muting suppresses sounds, combat popups, online alerts, and unsolicited window opening; messages, history, and unread counts are retained.
+- Keep the divider outside message contents, preserving reply, copying, and search indices. Reuse divider frames with no idle updates.
+
 # Forever Whisper 0.15.0-beta6
 
 ## Contact customization and message actions

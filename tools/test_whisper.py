@@ -133,8 +133,8 @@ DEFAULT_CHAT_FRAME=CreateFrame("Frame","DEFAULT_CHAT_FRAME",UIParent)
 UISpecialFrames={};SlashCmdList={};StaticPopupDialogs={};YES="Yes";NO="No"
 clock=100000;combat=false
 timers={};C_Timer={After=function(_,fn) timers[#timers+1]=fn end}
-function C_Timer.NewTimer(_,fn)
-    local timer={cancelled=false,Cancel=function(self) self.cancelled=true end}
+function C_Timer.NewTimer(delay,fn)
+    local timer={delay=delay,cancelled=false,Cancel=function(self) self.cancelled=true end}
     timers[#timers+1]=function() if not timer.cancelled then fn() end end
     return timer
 end
@@ -719,6 +719,81 @@ GetCursorPosition=nil
 SlashCmdList.FOREVERWHISPER("popup reset")
 assert(not ForeverWhisperDB.popupX and not ForeverWhisperDB.popupWidth and toast:GetWidth()==320)
 toast:Hide()
+-- New-message dividers preserve real message indices and survive ordinary refreshes.
+SlashCmdList.FOREVERWHISPER("UnreadCase")
+log:SetSize(420,100)
+for i=1,12 do event("CHAT_MSG_WHISPER_INFORM","Older "..i,"UnreadCase") end
+combat=true;event("PLAYER_REGEN_DISABLED")
+event("CHAT_MSG_WHISPER","First pending","UnreadCase")
+event("CHAT_MSG_WHISPER_INFORM","Outgoing between pending messages","UnreadCase")
+event("CHAT_MSG_WHISPER","Second pending","UnreadCase")
+event("CHAT_MSG_WHISPER","Third pending","UnreadCase")
+local pending=ForeverWhisperDB.conversations.unreadcase
+assert(pending.unread==3)
+combat=false;event("PLAYER_REGEN_ENABLED")
+SlashCmdList.FOREVERWHISPER("UnreadCase")
+local firstPending=#pending.messages-3
+assert(log.dividers[firstPending] and not log.dividers[firstPending+1],"Divider did not precede first unread incoming message")
+assert(#log.lines==#pending.messages,"Divider shifted reply/search message indices")
+assert(log.rows[firstPending].divider:IsShown() and log.rows[firstPending].divider.label.text=="New messages")
+assert(math.abs(log:GetVerticalScroll()-log.rows[firstPending].top)<0.001,
+    "Opening unread conversation skipped the first unread message")
+log.offset=3;log:SetVerticalScroll(20)
+event("CHAT_MSG_WHISPER","While reading older messages","UnreadCase")
+assert(pending.unread==1 and log:GetVerticalScroll()==20,"Incoming message moved the reader or was prematurely marked read")
+local dividerCount=0
+for _, value in ipairs(log.dividers) do if value then dividerCount=dividerCount+1 end end
+assert(dividerCount==1,"Refresh duplicated the new-messages divider")
+click("Latest messages");assert(pending.unread==0)
+SlashCmdList.FOREVERWHISPER("Alice");SlashCmdList.FOREVERWHISPER("UnreadCase")
+for _,value in ipairs(log.dividers) do assert(not value,"Read conversation retained an old-session divider") end
+-- Muting blocks notifications and automatic opening, while preserving history and unread counts.
+rightClick("UnreadCase");click("Mute notifications")
+win:Hide()
+event("CHAT_MSG_WHISPER","Muted message","UnreadCase")
+assert(not win:IsShown() and pending.unread==1 and pending.messages[#pending.messages].text=="Muted message")
+combat=true;event("PLAYER_REGEN_DISABLED")
+event("CHAT_MSG_WHISPER","Muted combat message","UnreadCase")
+assert(not toast:IsShown())
+combat=false;event("PLAYER_REGEN_ENABLED")
+assert(not win:IsShown(),"Muted combat message reopened the main window")
+SlashCmdList.FOREVERWHISPER("UnreadCase")
+rightClick("UnreadCase");click("Unmute notifications")
+-- Popup options apply font, duration, message privacy, and movement lock immediately.
+click("Settings");click("Popup options")
+local opts=ForeverWhisperPopupOptions
+opts.durationSlider:SetValue(12);opts.fontSlider:SetValue(17)
+toast:ShowWhisper("Alice","Hidden preview text")
+assert(toast.timer.delay==12 and toast.preview.fontSize==17)
+opts.nameOnly:SetChecked(true);opts.nameOnly.scripts.OnClick(opts.nameOnly)
+assert(not toast.preview:IsShown() and toast.title:IsShown())
+opts.locked:SetChecked(true);opts.locked.scripts.OnClick(opts.locked)
+toast.scripts.OnDragStart(toast)
+toast.resizeGrip.scripts.OnMouseDown(toast.resizeGrip,"LeftButton")
+assert(not toast.moving and not toast.resizing and not toast.resizeGrip:IsShown())
+opts.nameOnly:SetChecked(false);opts.nameOnly.scripts.OnClick(opts.nameOnly)
+opts.locked:SetChecked(false);opts.locked.scripts.OnClick(opts.locked)
+click("Done");toast:Hide();click("Back")
+-- Sorting cycles without changing contacts or losing their pinned status.
+local function sidebarKeys()
+    local keys={}
+    for _,o in ipairs(objects) do if o.statusDot and o.key and o:IsShown() then keys[#keys+1]=o.key end end
+    return keys
+end
+win.contactCount.scripts.OnClick()
+assert(ForeverWhisperDB.contactSort=="name")
+local keys=sidebarKeys()
+local previousName
+for _,key in ipairs(keys) do
+    local c=ForeverWhisperDB.conversations[key]
+    if not c.pinned then
+        local name=(c.nickname or c.name):lower()
+        assert(not previousName or previousName<=name,"Alphabetic sort is unstable")
+        previousName=name
+    end
+end
+win.contactCount.scripts.OnClick();assert(ForeverWhisperDB.contactSort=="online")
+win.contactCount.scripts.OnClick();assert(ForeverWhisperDB.contactSort=="recent")
 -- No idle per-frame handlers; minimap drag adds one only during dragging.
 for _,o in ipairs(objects) do assert(not o.scripts.OnUpdate,"Unexpected idle polling") end
 ''')
