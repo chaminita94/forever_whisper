@@ -20,6 +20,15 @@ local combatPreview
 local social
 local replyDrafts = {}
 local updateReplyPreview
+local messageMenu, contactEditor
+local watchedPresence = {}
+
+local function contactLabel(c)
+    return type(c.nickname) == "string" and c.nickname ~= "" and c.nickname or c.name
+end
+local function contactMatches(c, query)
+    return string.find(string.lower((c.name or "") .. " " .. (c.nickname or "") .. " " .. (c.note or "")), query, 1, true)
+end
 
 local defaults = {
     width = 820, height = 560, fontSize = 14, scale = 1,
@@ -75,7 +84,7 @@ end
 
 local function replyPayload(text)
     local reply = current and replyDrafts[current]
-    if reply then return "[Reply to " .. reply.who .. ": " .. reply.quote .. "] " .. text end
+    if reply then return "[Reply to: " .. reply.quote .. "] " .. text end
     return text
 end
 
@@ -316,7 +325,7 @@ local function trimContacts(keep)
     for i = #sorted, 1, -1 do
         if count <= 40 then break end
         if sorted[i].key ~= current and sorted[i].key ~= keep
-            and not sorted[i].data.pinned then
+            and not sorted[i].data.pinned and not sorted[i].data.notifyOnline then
             db.conversations[sorted[i].key] = nil
             count = count - 1
         end
@@ -392,6 +401,19 @@ local function contactPresence(name, c)
     if status ~= nil then return status, "friend", area end
     local known = guildPresence[normalize(name)]
     if known ~= nil then return known, "guild" end
+end
+
+local function refreshWatchedPresence(baseline)
+    for key, c in pairs(db.conversations) do
+        if c.notifyOnline then
+            local online = contactPresence(c.name, c)
+            if not baseline and watchedPresence[key] == false and online == true then
+                DEFAULT_CHAT_FRAME:AddMessage("|cff72eadbForever Whisper: " .. contactLabel(c) .. " is now online.|r")
+                if db.sound and PlaySound then PlaySound(SOUNDKIT and SOUNDKIT.TELL_MESSAGE or 3081) end
+            end
+            watchedPresence[key] = online
+        else watchedPresence[key] = nil end
+    end
 end
 
 local function refreshPresence()
@@ -572,14 +594,14 @@ local function refreshTranscript(preserveScroll, newMessage)
         if window.pinButton then window.pinButton:SetText("Pin") end
         return
     end
-    if not settings or not settings:IsShown() then window.heading:SetText(c.name) end
+    if not settings or not settings:IsShown() then window.heading:SetText(contactLabel(c)) end
     refreshPresence()
     if window.pinButton then window.pinButton:SetText(c.pinned and "Unpin" or "Pin") end
     local previous
     for i, item in ipairs(c.messages) do
         local stamp = db.timestamps and ("   |cff778899" .. date("%H:%M", item.at) .. "|r") or ""
         local color = item.outgoing and "|cff89cfff" or "|cffffcf83"
-        local speaker = "[" .. (item.outgoing and "You" or c.name) .. "]"
+        local speaker = "[" .. (item.outgoing and "You" or contactLabel(c)) .. "]"
         local prefix = searchJump and searchJump.key == current and searchJump.index == i
             and "|cff72eadb>> |r" or ""
         local day = date("%d %b", item.at)
@@ -590,7 +612,7 @@ local function refreshTranscript(preserveScroll, newMessage)
         local dateLine = newDay and ("|cff778899" .. day .. "|r\n") or ""
         local body, who, quote = NS.DecodeReply(item.text)
         if who and c.kind == "bnet" then who = NS.BNetDisplayName(who) end
-        local quoted = who and ("|cff7fcbbbReply to " .. NS.Excerpt(who, 40) .. "|r\n|cff98aaa9" .. NS.Excerpt(quote) .. "|r\n") or ""
+        local quoted = who and ("|cff7fcbbbReply to:|r\n|cff98aaa9" .. NS.Excerpt(quote) .. "|r\n") or ""
         transcript:AddMessage(dateLine .. heading .. quoted .. prefix .. "|cffd6e1eb  " .. renderEmoji(renderMapPins(body)) .. "|r", item.outgoing)
         previous = item
     end
@@ -608,7 +630,7 @@ local function refreshContacts()
     if contactQuery ~= "" then
         local filtered = {}
         for _, item in ipairs(sorted) do
-            if string.find(string.lower(item.data.name), contactQuery, 1, true) then
+            if contactMatches(item.data, contactQuery) then
                 filtered[#filtered + 1] = item
             end
         end
@@ -621,7 +643,7 @@ local function refreshContacts()
         if item and i <= visible then
             b.key = item.key
             local unread = tonumber(item.data.unread) or 0
-            b.name:SetText(item.data.name)
+            b.name:SetText(contactLabel(item.data))
             local status, source, area = contactPresence(item.data.name, item.data)
             b.statusDot:SetTexture(status == true and "Interface\\FriendsFrame\\StatusIcon-Online"
                 or "Interface\\FriendsFrame\\StatusIcon-Offline")
@@ -644,7 +666,7 @@ local function refreshContacts()
             if social and social:IsTyping(item.data.name) then
                 b.preview:SetText("|cff70dcccTyping...|r")
             end
-            b.initial:SetText(string.upper(item.data.name:match("^.[\128-\191]*") or "?"))
+            b.initial:SetText(string.upper(contactLabel(item.data):match("^.[\128-\191]*") or "?"))
             b.unread:SetText(unread > 99 and "99+" or tostring(unread))
             b.unreadBadge:SetShown(unread > 0)
             b.highlight:SetShown(item.key == current)
@@ -665,7 +687,7 @@ local function selectConversation(key)
     if current and input then drafts[current] = input:GetText() end
     if social then social:Stop() end
     current = key
-    if contactQuery ~= "" and not string.find(string.lower(c.name), contactQuery, 1, true)
+    if contactQuery ~= "" and not contactMatches(c, contactQuery)
         and window.contactFilter then window.contactFilter:SetText("") end
     if input then input:SetText(drafts[key] or "") end
     if updateReplyPreview then updateReplyPreview() end
@@ -840,15 +862,15 @@ local function performSearch()
     local people, messageMatches = {}, {}
     local peopleCount, messageCount = 0, 0
     for key, c in pairs(db.conversations) do
-        if string.find(string.lower(c.name or key), query, 1, true) then
+        if contactMatches(c, query) then
             peopleCount = peopleCount + 1
-            people[#people + 1] = { kind = "person", key = key, name = c.name,
+            people[#people + 1] = { kind = "person", key = key, name = contactLabel(c),
                 saved = #c.messages, at = c.last }
         end
         for i, item in ipairs(c.messages) do
             if string.find(string.lower(item.text), query, 1, true) then
                 messageCount = messageCount + 1
-                local result = { kind = "message", key = key, name = c.name, index = i,
+                local result = { kind = "message", key = key, name = contactLabel(c), index = i,
                     text = c.kind == "bnet" and NS.BNetDisplayMessage(item.text) or item.text, at = item.at }
                 if #messageMatches < 60 then
                     messageMatches[#messageMatches + 1] = result
@@ -953,6 +975,103 @@ local function copyHistory(key)
 end
 
 
+local function editContact(key)
+    local c = db.conversations[key]
+    if not c then return end
+    if not contactEditor then
+        contactEditor = CreateFrame("Frame", "ForeverWhisperContactDetails", window)
+        contactEditor:SetSize(360, 228)
+        contactEditor:SetPoint("CENTER")
+        contactEditor:SetFrameLevel(window:GetFrameLevel() + 65)
+        contactEditor:EnableMouse(true)
+        fill(contactEditor, 0.05, 0.08, 0.12, 1)
+        contactEditor.title = label(contactEditor, "", 14, "TOPLEFT", 16, -14)
+        label(contactEditor, "Nickname (only you see this)", 11, "TOPLEFT", 16, -44)
+        label(contactEditor, "Private note", 11, "TOPLEFT", 16, -108)
+        local function field(y, max)
+            local box = CreateFrame("EditBox", nil, contactEditor)
+            box:SetPoint("TOPLEFT", 16, y)
+            box:SetSize(328, 32)
+            box:SetAutoFocus(false)
+            box:SetMaxLetters(max)
+            box:SetTextInsets(8, 8, 0, 0)
+            box:SetFont("Fonts\\ARIALN.TTF", 13, "")
+            fill(box, 0.12, 0.18, 0.23, 1)
+            box:SetScript("OnEscapePressed", function() contactEditor:Hide() end)
+            return box
+        end
+        contactEditor.nickname = field(-62, 32)
+        contactEditor.note = field(-126, 160)
+        local save = button(contactEditor, "Save details", 110, 28, function()
+            local target = db.conversations[contactEditor.key]
+            if target then
+                local nickname = NS.Excerpt(contactEditor.nickname:GetText(), 96):match("^%s*(.-)%s*$")
+                local note = NS.Excerpt(contactEditor.note:GetText(), 480):match("^%s*(.-)%s*$")
+                target.nickname, target.note = nickname ~= "" and nickname or nil, note ~= "" and note or nil
+                refreshContacts(); refreshTranscript(true)
+                if searchInput then performSearch() end
+            end
+            contactEditor:Hide()
+        end)
+        save:SetPoint("BOTTOMLEFT", 16, 14)
+        local cancel = button(contactEditor, "Cancel", 78, 28, function() contactEditor:Hide() end)
+        cancel:SetPoint("BOTTOMRIGHT", -16, 14)
+        contactEditor:SetScript("OnHide", function()
+            contactEditor.nickname:ClearFocus(); contactEditor.note:ClearFocus()
+        end)
+        if UISpecialFrames then UISpecialFrames[#UISpecialFrames + 1] = "ForeverWhisperContactDetails" end
+    end
+    contactEditor.key = key
+    contactEditor.title:SetText(c.name)
+    contactEditor.nickname:SetText(c.nickname or "")
+    contactEditor.note:SetText(c.note or "")
+    contactEditor:Show()
+    contactEditor.nickname:SetFocus()
+end
+
+local function openMessageMenu(index, owner)
+    if inCombat() then return end
+    local key, c = current, current and db.conversations[current]
+    local message = c and c.messages[index]
+    if not message then return end
+    if contactMenu then contactMenu:Hide() end
+    if not messageMenu then
+        messageMenu = CreateFrame("Frame", "ForeverWhisperMessageMenu", window)
+        messageMenu:SetSize(150, 78)
+        messageMenu:SetFrameLevel(window:GetFrameLevel() + 50)
+        messageMenu:SetClampedToScreen(true)
+        messageMenu:EnableMouse(true)
+        fill(messageMenu, 0.05, 0.08, 0.12, 1)
+        local copy = button(messageMenu, "Copy text", 134, 26, function()
+            local target = db.conversations[messageMenu.key]
+            if target then
+                local text = messageMenu.text
+                copyHistory(messageMenu.key)
+                copyBox:SetText(text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|H.-|h(.-)|h", "%1"))
+                copyBox:HighlightText()
+            end
+            messageMenu:Hide()
+        end)
+        copy:SetPoint("TOPLEFT", 8, -8)
+        local reply = button(messageMenu, "Reply", 134, 26, function()
+            local target = db.conversations[messageMenu.key]
+            if target and current == messageMenu.key then
+                for i, item in ipairs(target.messages) do
+                    if item == messageMenu.message then transcript.onReply(transcript, i); break end
+                end
+            end
+            messageMenu:Hide()
+        end)
+        reply:SetPoint("TOPLEFT", 8, -42)
+        if UISpecialFrames then UISpecialFrames[#UISpecialFrames + 1] = "ForeverWhisperMessageMenu" end
+    end
+    messageMenu.key, messageMenu.message = key, message
+    messageMenu.text = c.kind == "bnet" and NS.BNetDisplayMessage(message.text) or message.text
+    messageMenu:ClearAllPoints()
+    messageMenu:SetPoint("TOPLEFT", owner, "BOTTOMLEFT", 0, 0)
+    messageMenu:Show()
+end
+
 local function togglePin(key)
     local c = db.conversations[key]
     if not c then return end
@@ -1030,6 +1149,7 @@ openContactMenu = function(key, owner)
     local c = db.conversations[key]
     if not c or inCombat() then return end
     GameTooltip:Hide()
+    if messageMenu then messageMenu:Hide() end
     if palette then palette:Hide() end
     if actionMenu then actionMenu:Hide() end
     if not contactMenu then
@@ -1048,7 +1168,7 @@ openContactMenu = function(key, owner)
         contactMenu.blocker:SetFrameLevel(window:GetFrameLevel() + 44)
         contactMenu.blocker:EnableMouse(true)
         contactMenu.blocker:SetScript("OnMouseDown", function() contactMenu:Hide() end)
-        for i = 1, 16 do
+        for i = 1, 24 do
             local b = button(contactMenu, "", 224, 27, function() end)
             -- The action closure is replaced each time the menu opens; it never
             -- resolves the recipient from the currently selected conversation.
@@ -1100,6 +1220,12 @@ openContactMenu = function(key, owner)
     end
     end -- Character-only friend/ignore/report actions must never target a BattleTag.
     add(c.pinned and "Unpin conversation" or "Pin conversation", function() togglePin(key) end)
+    add("Nickname / private note...", function() editContact(key) end)
+    add(c.notifyOnline and "Disable online notification" or "Notify when online", function()
+        c.notifyOnline = not c.notifyOnline or nil
+        if c.notifyOnline then watchedPresence[key] = contactPresence(c.name, c)
+        else watchedPresence[key] = nil end
+    end)
     add(c.kind == "bnet" and "Copy name" or "Copy character name", function()
         copyHistory(key)
         copyBox:SetText(c.name)
@@ -1130,7 +1256,7 @@ openContactMenu = function(key, owner)
         end
     end
     add("Customize actions...", editCustomActions)
-    contactMenu.title:SetText(c.name)
+    contactMenu.title:SetText(contactLabel(c))
     for i, row in ipairs(contactMenu.rows) do
         local entry = entries[i]
         row:SetShown(entry ~= nil)
@@ -1380,8 +1506,18 @@ local function makeWindow()
         b.hover:SetAllPoints()
         b.hover:SetColorTexture(0.30, 0.50, 0.59, 0.16)
         b.hover:Hide()
-        b:SetScript("OnEnter", function(self) self.hover:Show() end)
-        b:SetScript("OnLeave", function(self) self.hover:Hide() end)
+        b:SetScript("OnEnter", function(self)
+            self.hover:Show()
+            local c = self.key and db.conversations[self.key]
+            if c and (c.nickname or c.note or c.notifyOnline) then
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:AddLine(c.name)
+                if c.note then GameTooltip:AddLine(c.note, 0.75, 0.83, 0.90, true) end
+                if c.notifyOnline then GameTooltip:AddLine("Online notification enabled", 0.45, 0.90, 0.70) end
+                GameTooltip:Show()
+            end
+        end)
+        b:SetScript("OnLeave", function(self) self.hover:Hide(); GameTooltip:Hide() end)
         b:EnableMouseWheel(true)
         b:SetScript("OnMouseWheel", function(_, delta)
             contactOffset = contactOffset - delta
@@ -1451,6 +1587,7 @@ local function makeWindow()
     transcript:EnableMouse(true)
     if transcript.SetHyperlinksEnabled then transcript:SetHyperlinksEnabled(true) end
     transcript.onHyperlinkClick = function(self, link, text, mouseButton)
+        if messageMenu then messageMenu:Hide() end
         local key = link:match("^fwplayer:(.+)$")
         if key then
             if mouseButton == "RightButton" then openContactMenu(key, self) end
@@ -1461,9 +1598,11 @@ local function makeWindow()
         end
     end
     transcript:SetScript("OnMouseDown", function()
+        if messageMenu then messageMenu:Hide() end
         if contactMenu then contactMenu:Hide() end
         actionMenu:Hide()
     end)
+    transcript.onMessageMenu = function(_, index, owner) openMessageMenu(index, owner) end
     window.empty = label(conversationView, "A little closer to your people.\n\nChoose a chat on the left, or click + New.", 15, "CENTER", 95, 12)
     window.empty:SetJustifyH("CENTER")
     window.empty:SetTextColor(0.57, 0.69, 0.79)
@@ -1519,7 +1658,7 @@ local function makeWindow()
         if not message or inCombat() then return end
         local who = message.outgoing and ((UnitName and UnitName("player")) or "You") or c.name
         local body = NS.DecodeReply(message.text)
-        replyDrafts[current] = { who = NS.Excerpt(who, 40), quote = NS.Excerpt(body) }
+        replyDrafts[current] = { who = NS.Excerpt(who, 40), quote = NS.Excerpt(body, 48) }
         updateReplyPreview()
         if input then input:SetFocus() end
     end
@@ -1883,6 +2022,8 @@ local function makeWindow()
         if searchInput then searchInput:ClearFocus() end
         if contactMenu then contactMenu:Hide() end
         if customEditor then customEditor:Hide() end
+        if contactEditor then contactEditor:Hide() end
+        if messageMenu then messageMenu:Hide() end
         if settings and settings.artPreview then settings.artPreview:Hide() end
     end)
     applyTheme()
@@ -2331,6 +2472,9 @@ StaticPopupDialogs["FOREVERWHISPER_DELETE"] = {
     OnAccept = function(_, key)
         if not db or not db.conversations[key] then return end
         db.conversations[key], drafts[key], replyDrafts[key] = nil, nil, nil
+        watchedPresence[key] = nil
+        if contactEditor and contactEditor.key == key then contactEditor:Hide() end
+        if messageMenu and messageMenu.key == key then messageMenu:Hide() end
         if searchJump and searchJump.key == key then searchJump = nil end
         if current == key then
             if social then social:Stop() end
@@ -2447,6 +2591,7 @@ FW:SetScript("OnEvent", function(_, event, ...)
         makeMinimapButton()
         positionMinimapButton()
         guildPresenceDirty = true
+        refreshWatchedPresence(true)
         if IsInGuild and IsInGuild() and C_GuildInfo and C_GuildInfo.GuildRoster then
             C_GuildInfo.GuildRoster()
         end
@@ -2454,6 +2599,7 @@ FW:SetScript("OnEvent", function(_, event, ...)
     elseif event == "BN_CONNECTED" or event == "BN_DISCONNECTED" or event == "BN_FRIEND_INFO_CHANGED" or event == "BN_FRIEND_LIST_SIZE_CHANGED"
         or event == "BN_FRIEND_ACCOUNT_ONLINE" or event == "BN_FRIEND_ACCOUNT_OFFLINE" then
         NS.InvalidateBNet(event == "BN_DISCONNECTED")
+        refreshWatchedPresence(event == "BN_CONNECTED" or event == "BN_DISCONNECTED")
         if window and window:IsShown() and activeView == "chat" and not inCombat() then
             refreshPresence()
             refreshContacts()
@@ -2462,12 +2608,14 @@ FW:SetScript("OnEvent", function(_, event, ...)
         if social then social:Receive(...) end
     elseif event == "FRIENDLIST_UPDATE" then
         NS.InvalidateFriends()
+        refreshWatchedPresence()
         if not inCombat() and window and window:IsShown() and activeView == "chat" then
             refreshPresence()
             refreshContacts()
         end
     elseif event == "GUILD_ROSTER_UPDATE" or event == "PLAYER_GUILD_UPDATE" then
         guildPresenceDirty = true
+        refreshWatchedPresence()
         if not inCombat() and window and window:IsShown() and activeView == "chat" then
             refreshPresence()
             refreshContacts()

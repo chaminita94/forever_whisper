@@ -75,6 +75,8 @@ function NS.Excerpt(text, limit)
 end
 
 function NS.DecodeReply(text)
+    local excerpt, answer = text:match("^%[Reply to: (.-)%] (.*)$")
+    if excerpt and #excerpt <= 72 then return answer, "", excerpt end
     local who, quote, body = text:match("^%[Reply to ([^:]+): (.-)%] (.*)$")
     if who and #who <= 80 and #quote <= 72 then return body, who, quote end
     return text

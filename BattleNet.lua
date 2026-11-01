@@ -8,7 +8,7 @@ end
 
 function NS.BNetDisplayMessage(text)
     local body, who, quote = NS.DecodeReply(text)
-    if who then return "[Reply to " .. NS.BNetDisplayName(who) .. ": " .. quote .. "] " .. body end
+    if who then return "[Reply to: " .. quote .. "] " .. body end
     return text
 end
 

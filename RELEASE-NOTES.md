@@ -1,3 +1,14 @@
+# Forever Whisper 0.15.0-beta6
+
+## Contact customization and message actions
+
+- Add local nicknames and private notes from each contact's right-click menu. Both are searchable; notes appear on hover. They are never sent to the other player.
+- Add Notify when online as an opt-in setting for each contact. Disable it from the same menu. Alerts use available friends, guild, and Battle.net events, without polling, and fire on known offline-to-online transitions.
+- Add right-click message actions for Copy text and Reply. Copy text opens a selectable text field for Ctrl+C.
+- Send quoted replies as [Reply to: excerpt] answer, without the original sender's name in the prefix.
+- Shorten long reply excerpts to 48 bytes, adding ... without splitting UTF-8 characters. The original message stays in history.
+- Continue reading the older named quote format.
+
 # Forever Whisper 0.15.0-beta5
 
 ## Adjustable combat popup

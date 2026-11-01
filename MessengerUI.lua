@@ -105,7 +105,10 @@ function NS.CreateTranscript(parent, getStyle)
             row.body:EnableMouseWheel(true)
             if row.body.SetHyperlinksEnabled then row.body:SetHyperlinksEnabled(true) end
             row.body:SetScript("OnHyperlinkClick", function(_, ...) forward("OnHyperlinkClick", ...) end)
-            row.body:SetScript("OnMouseDown", function(_, ...) forward("OnMouseDown", ...) end)
+            row.body:SetScript("OnMouseDown", function(_, mouseButton)
+                forward("OnMouseDown", mouseButton)
+                if mouseButton == "RightButton" and view.onMessageMenu then view.onMessageMenu(view, index, row.body) end
+            end)
             row.body:SetScript("OnMouseWheel", function(_, ...) forward("OnMouseWheel", ...) end)
             self.rows[index] = row
         end
