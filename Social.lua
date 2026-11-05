@@ -27,6 +27,21 @@ function NS.ReleaseOutsideFocus(roots)
     for _, box in ipairs(NS.editBoxes) do if box:HasFocus() then box:ClearFocus() end end
 end
 
+-- Return true only when our active composer consumed the insertion. Preserve the
+-- original function and its return values for normal chat and other addons.
+function NS.InstallLinkInsertion(tryInsert)
+    local function wrap(owner, key)
+        local original = owner and owner[key]
+        if type(original) ~= "function" then return end
+        owner[key] = function(text, ...)
+            if tryInsert(text) then return true end
+            return original(text, ...)
+        end
+    end
+    wrap(ChatFrameUtil, "InsertLink")
+    wrap(_G, "ChatEdit_InsertLink")
+end
+
 function NS.PeerKey(name)
     if type(name) ~= "string" then return nil end
     name = name:match("^%s*(.-)%s*$"):lower()

@@ -176,6 +176,13 @@ end
 function UnitPopup_OpenMenu(which,data) nativeMenu={which=which,data=data} end
 function SetItemRef(link,text,button) nativeLink={link=link,button=button} end
 function ChatFrame_OpenChat(text) preparedCommand=text end
+nativeInsertions={}
+function ChatEdit_InsertLink(text) nativeInsertions[#nativeInsertions+1]=text;return false,"native" end
+ChatFrameUtil={InsertLink=function(text) return ChatEdit_InsertLink(text) end}
+function GetCurrentKeyBoardFocus()
+    for _,o in ipairs(objects) do if o.focus then return o end end
+end
+function IsModifiedClick(action) return action=="CHATLINK" and chatLinkModifier or false end
 C_PartyInfo={InviteUnit=function(name) invited=name end}
 C_FriendList={AddFriend=function(name) addedFriend=name end}
 function ChatFrame_AddMessageEventFilter(e,f) filters[e]=f end
@@ -945,6 +952,37 @@ local foreign=CreateFrame("EditBox",nil,UIParent);foreign:SetFocus()
 event("GLOBAL_MOUSE_DOWN","LeftButton")
 assert(foreign.focus,"Outside click changed another addon's keyboard field")
 foreign:ClearFocus();GetMouseFoci=nil
+-- Both modern and legacy Shift-click APIs insert exactly once into the active
+-- composer, including the outside mouse-down / item mouse-up event sequence.
+local itemLink="|cff1eff00|Hitem:6948::::::::60:::::::::|h[Hearthstone]|h|r"
+local originalCount=#nativeInsertions
+composer:SetText("Look at ");composer:SetFocus()
+chatLinkModifier=true
+GetMouseFoci=function() return {UIParent} end
+event("GLOBAL_MOUSE_DOWN","LeftButton")
+assert(not composer.focus,"Outside Shift-click kept movement keys captured")
+event("GLOBAL_MOUSE_UP","LeftButton")
+assert(ChatFrameUtil.InsertLink(itemLink)==true)
+assert(composer:GetText()=="Look at "..itemLink and composer.focus)
+assert(#nativeInsertions==originalCount,"Item link leaked into native chat")
+timers[#timers]();composer:SetText("")
+assert(ChatEdit_InsertLink(itemLink)==true and composer:GetText()==itemLink)
+composer.scripts.OnEnterPressed(composer)
+assert(sent[#sent].text==itemLink,"Sending changed native item-link markup")
+composer:SetText(string.rep("x",240));composer:SetFocus()
+assert(ChatEdit_InsertLink(itemLink)==true and composer:GetText()==string.rep("x",240),"Oversized link was partially inserted")
+composer:SetText("Unchanged");composer:SetFocus()
+event("GLOBAL_MOUSE_DOWN","LeftButton");event("GLOBAL_MOUSE_UP","LeftButton")
+timers[#timers]()
+local handled,result=ChatEdit_InsertLink(itemLink)
+assert(handled==false and result=="native" and composer:GetText()=="Unchanged" and not composer.focus,"Expired click stole keyboard focus")
+composer:SetFocus()
+event("GLOBAL_MOUSE_DOWN","LeftButton")
+local other=CreateFrame("EditBox",nil,UIParent);other:SetFocus()
+assert(ChatFrameUtil.InsertLink(itemLink)==false and not composer.focus,"Item link stole another field's focus")
+event("GLOBAL_MOUSE_UP","LeftButton");timers[#timers]()
+other:ClearFocus();chatLinkModifier=false;GetMouseFoci=nil
+composer:SetText("")
 -- Sound preview is explicit; alerts obey global sound and contact mute settings.
 click("Settings");click("Sound / language")
 local general=ForeverWhisperGeneralOptions

@@ -22,6 +22,7 @@ local replyDrafts = {}
 local updateReplyPreview
 local messageMenu, contactEditor
 local watchedPresence = {}
+local pendingLinkClick
 local contactPresence
 
 local function contactLabel(c)
@@ -2106,7 +2107,25 @@ local function makeWindow()
             elseif text == "" then social:Stop() end
         end
     end)
-    input:SetMaxLetters(250)
+    -- Hyperlink markup counts toward the send limit; never truncate its closing tags.
+    input:SetMaxLetters(0)
+    NS.InstallLinkInsertion(function(text)
+        if type(text) ~= "string" or text == "" or not current or activeView ~= "chat"
+            or not input:IsShown() or inCombat() then return false end
+        local focused = GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
+        if focused and focused ~= input then return false end
+        local pending = pendingLinkClick and pendingLinkClick.key == current
+            and IsModifiedClick and IsModifiedClick("CHATLINK")
+        if not input:HasFocus() and not pending then return false end
+        pendingLinkClick = nil
+        if #replyPayload(input:GetText() .. text) > 255 then
+            DEFAULT_CHAT_FRAME:AddMessage(NS.L["|cffff8080Forever Whisper: message is too long.|r"])
+            return true
+        end
+        input:Insert(text)
+        input:SetFocus()
+        return true
+    end)
     input:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     local function send()
         local c = current and db.conversations[current]
@@ -3020,7 +3039,21 @@ FW:SetScript("OnEvent", function(_, event, ...)
     if event == "GLOBAL_MOUSE_DOWN" then
         local menu=NS.dropdownMenu
         if menu and menu:IsShown() and not NS.MouseInsideRoots({menu,menu.owner}) then menu:Hide() end
+        -- Outside clicks still release movement keys immediately. Remember only this
+        -- Shift-click until its item OnClick runs, then discard the one-click intent.
+        pendingLinkClick = nil
+        if ... == "LeftButton" and input and input:IsShown() and input:HasFocus()
+            and IsModifiedClick and IsModifiedClick("CHATLINK") and C_Timer and C_Timer.After then
+            local click = {key=current}
+            pendingLinkClick = click
+        end
         NS.ReleaseOutsideFocus({window, copyWindow})
+    elseif event == "GLOBAL_MOUSE_UP" then
+        local click = pendingLinkClick
+        if click then
+            -- Item buttons run OnClick on release; expire after those handlers.
+            C_Timer.After(0, function() if pendingLinkClick == click then pendingLinkClick = nil end end)
+        end
     elseif event == "ADDON_LOADED" then
         if ... ~= ADDON then return end
         ForeverWhisperDB = type(ForeverWhisperDB) == "table" and ForeverWhisperDB or {}
@@ -3115,6 +3148,9 @@ FW:SetScript("OnEvent", function(_, event, ...)
         FW:RegisterEvent("FRIENDLIST_UPDATE")
         if not C_EventUtils or not C_EventUtils.IsEventValid or C_EventUtils.IsEventValid("GLOBAL_MOUSE_DOWN") then
             FW:RegisterEvent("GLOBAL_MOUSE_DOWN")
+        end
+        if not C_EventUtils or not C_EventUtils.IsEventValid or C_EventUtils.IsEventValid("GLOBAL_MOUSE_UP") then
+            FW:RegisterEvent("GLOBAL_MOUSE_UP")
         end
         FW:RegisterEvent("GUILD_ROSTER_UPDATE")
         FW:RegisterEvent("PLAYER_GUILD_UPDATE")

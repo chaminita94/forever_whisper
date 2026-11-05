@@ -2,7 +2,7 @@
 
 A customizable messenger for World of Warcraft whispers, with persistent conversations, themed artwork, and combat-friendly behavior.
 
-**Current release: 0.15.2.** Supports Classic Era and Forever.
+**Current release: 0.15.3.** Supports Classic Era and Forever.
 
 ## Features
 
