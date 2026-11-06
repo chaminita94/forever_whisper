@@ -1,14 +1,7 @@
-# Forever Whisper 0.15.4 - local test
+# Forever Whisper 0.15.4
 
-## Login
-
-- Start the UI and whisper handlers when WoW finishes logging in. Use the current chat filter API when available and keep startup working on clients without it.
-
-## Reply target
-
-- Fix native /r and Reply targeting an older character whisper after receiving a Battle.net whisper while normal chat display is filtered.
-- Synchronize the native last-sender target on incoming character and Battle.net whispers, preserving the exact original sender token and whisper type. Outgoing messages do not replace the last sender.
-- Support modern and legacy chat APIs without replacing slash commands, reply functions, or key bindings.
+- Fixed startup on a fresh login in WoW Forever. The minimap button and whisper capture now initialize without a UI reload.
+- Fixed /r and Reply targeting an older character whisper after a Battle.net whisper. Both commands follow the latest incoming sender.
 
 # Forever Whisper 0.15.3
 
