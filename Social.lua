@@ -42,6 +42,13 @@ function NS.InstallLinkInsertion(tryInsert)
     wrap(_G, "ChatEdit_InsertLink")
 end
 
+-- Chat filters return before Blizzard updates its reply target. Keep the native
+-- /r target in sync using the original sender token, not our display label or ID.
+function NS.RememberWhisperSender(author, bnet)
+    local setter = ChatFrameUtil and ChatFrameUtil.SetLastTellTarget or ChatEdit_SetLastTellTarget
+    if setter then pcall(setter, author, bnet and "BN_WHISPER" or "WHISPER") end
+end
+
 function NS.PeerKey(name)
     if type(name) ~= "string" then return nil end
     name = name:match("^%s*(.-)%s*$"):lower()

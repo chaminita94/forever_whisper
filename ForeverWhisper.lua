@@ -3054,8 +3054,18 @@ FW:SetScript("OnEvent", function(_, event, ...)
             -- Item buttons run OnClick on release; expire after those handlers.
             C_Timer.After(0, function() if pendingLinkClick == click then pendingLinkClick = nil end end)
         end
-    elseif event == "ADDON_LOADED" then
-        if ... ~= ADDON then return end
+    elseif event == "ADDON_LOADED" or event == "PLAYER_LOGIN" then
+        if event == "ADDON_LOADED" then
+            if ... ~= ADDON then return end
+            FW:UnregisterEvent("ADDON_LOADED")
+            -- On a cold login, other Blizzard UI modules may still be loading.
+            if IsLoggedIn and not IsLoggedIn() then
+                FW:RegisterEvent("PLAYER_LOGIN")
+                return
+            end
+        else
+            FW:UnregisterEvent("PLAYER_LOGIN")
+        end
         ForeverWhisperDB = type(ForeverWhisperDB) == "table" and ForeverWhisperDB or {}
         db = ForeverWhisperDB
         NS.SetLanguage(db.language)
@@ -3139,10 +3149,6 @@ FW:SetScript("OnEvent", function(_, event, ...)
             end
         end)
         makeMinimapButton()
-        ChatFrame_AddMessageEventFilter("CHAT_MSG_WHISPER", chatFilter)
-        ChatFrame_AddMessageEventFilter("CHAT_MSG_WHISPER_INFORM", chatFilter)
-        ChatFrame_AddMessageEventFilter("CHAT_MSG_BN_WHISPER", chatFilter)
-        ChatFrame_AddMessageEventFilter("CHAT_MSG_BN_WHISPER_INFORM", chatFilter)
         FW:RegisterEvent("CHAT_MSG_WHISPER")
         FW:RegisterEvent("CHAT_MSG_WHISPER_INFORM")
         FW:RegisterEvent("FRIENDLIST_UPDATE")
@@ -3166,7 +3172,14 @@ FW:SetScript("OnEvent", function(_, event, ...)
         FW:RegisterEvent("BN_FRIEND_ACCOUNT_ONLINE")
         FW:RegisterEvent("BN_FRIEND_ACCOUNT_OFFLINE")
         FW:RegisterEvent("BN_FRIEND_LIST_SIZE_CHANGED")
-        FW:UnregisterEvent("ADDON_LOADED")
+
+        local addFilter = ChatFrameUtil and ChatFrameUtil.AddMessageEventFilter or ChatFrame_AddMessageEventFilter
+        if addFilter then
+            addFilter("CHAT_MSG_WHISPER", chatFilter)
+            addFilter("CHAT_MSG_WHISPER_INFORM", chatFilter)
+            addFilter("CHAT_MSG_BN_WHISPER", chatFilter)
+            addFilter("CHAT_MSG_BN_WHISPER_INFORM", chatFilter)
+        end
     elseif event == "PLAYER_ENTERING_WORLD" then
         NS.InvalidateBNet(false)
         NS.InvalidateFriends()
@@ -3208,6 +3221,7 @@ FW:SetScript("OnEvent", function(_, event, ...)
         if type(message) ~= "string" or type(author) ~= "string" then return end
         local bnet = event == "CHAT_MSG_BN_WHISPER" or event == "CHAT_MSG_BN_WHISPER_INFORM"
         local outgoing = event == "CHAT_MSG_WHISPER_INFORM" or event == "CHAT_MSG_BN_WHISPER_INFORM"
+        if not outgoing then NS.RememberWhisperSender(author, bnet) end
         local lineID, guid = select(11, ...)
         local bnetID = bnet and select(13, ...) or nil
         if bnet and not NS.ResolveBNetID(bnetID) then return end

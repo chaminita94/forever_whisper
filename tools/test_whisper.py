@@ -123,9 +123,16 @@ for _,name in ipairs({"SetAllPoints","SetAutoFocus","SetClampedToScreen","SetFad
     "SetMaxResize","SetMinMaxValues","SetMinResize","SetMovable","SetMultiLine",
     "SetNormalTexture","SetObeyStepOnDrag","SetOwner","SetPushedTexture","SetResizable",
     "SetResizeBounds","SetScale","SetScrollChild","SetSpacing","SetTextInsets","SetValueStep",
-    "SetWordWrap","EnableMouse","EnableMouseWheel","RegisterEvent","UnregisterEvent",
+    "SetWordWrap","EnableMouse","EnableMouseWheel",
     "RegisterForClicks","RegisterForDrag","StartMoving","StartSizing","StopMovingOrSizing",
     "HighlightText","AddLine","SetThumbTexture","SetOrientation"}) do methods[name]=function() end end
+function methods:RegisterEvent(name)
+    self.events=self.events or {}
+    self.events[name]=true
+end
+function methods:UnregisterEvent(name)
+    if self.events then self.events[name]=nil end
+end
 function methods:SetAllPoints(target) self.allPoints=target or self.parent end
 function methods:SetScrollChild(target) self.scrollChild=target end
 function methods:SetJustifyH(value) self.justify=value end
@@ -178,7 +185,11 @@ function SetItemRef(link,text,button) nativeLink={link=link,button=button} end
 function ChatFrame_OpenChat(text) preparedCommand=text end
 nativeInsertions={}
 function ChatEdit_InsertLink(text) nativeInsertions[#nativeInsertions+1]=text;return false,"native" end
-ChatFrameUtil={InsertLink=function(text) return ChatEdit_InsertLink(text) end}
+local lastTellTarget,lastTellType
+function ChatEdit_SetLastTellTarget(target,kind) lastTellTarget,lastTellType=target,kind end
+function ChatEdit_GetLastTellTarget() return lastTellTarget,lastTellType end
+ChatFrameUtil={InsertLink=function(text) return ChatEdit_InsertLink(text) end,
+    SetLastTellTarget=ChatEdit_SetLastTellTarget,GetLastTellTarget=ChatEdit_GetLastTellTarget}
 function GetCurrentKeyBoardFocus()
     for _,o in ipairs(objects) do if o.focus then return o end end
 end
@@ -189,7 +200,7 @@ function ChatFrame_AddMessageEventFilter(e,f) filters[e]=f end
 function SendChatMessage(text,kind,lang,name) sent[#sent+1]={text=text,name=name} end
 function StaticPopup_Show(which,text,_,data) popup={which=which,text=text,data=data} end
 function event(name,...)
-    for _,o in ipairs(objects) do if o.kind=="Frame" and o.scripts.OnEvent then o.scripts.OnEvent(o,name,...) end end
+    for _,o in ipairs(objects) do if o.events and o.events[name] and o.scripts.OnEvent then o.scripts.OnEvent(o,name,...) end end
 end
 function find(kind,text)
     for _,o in ipairs(objects) do
@@ -1035,6 +1046,34 @@ ForeverWhisperDB.conversations.soundtester.muted=true
 event("CHAT_MSG_WHISPER","Muted sound","SoundTester")
 assert(#playedSounds==soundCount)
 ForeverWhisperDB.sound=false;ForeverWhisperDB.soundChoice=1
+-- /r follows incoming whispers across both transports, even when native chat
+-- display is filtered. Preserve the exact BNet token, never a prettified label.
+local function assertReply(target,kind)
+    local actualTarget,actualKind=ChatFrameUtil.GetLastTellTarget()
+    assert(actualTarget==target and actualKind==kind,"Native /r target is stale or uses the wrong whisper transport")
+end
+event("CHAT_MSG_WHISPER","Character reply target","ReplyCharacter-TestRealm")
+assertReply("ReplyCharacter-TestRealm","WHISPER")
+local function bnetReply(kind,text,author,id)
+    local args=bnArgs(text,id);args[2]=author
+    event(kind,unpack(args,1,13))
+end
+local token="|Kq30|kfreddy|k"
+bnetReply("CHAT_MSG_BN_WHISPER","Newest incoming BNet",token,30)
+assertReply(token,"BN_WHISPER")
+assert(filters.CHAT_MSG_BN_WHISPER(nil,"CHAT_MSG_BN_WHISPER",unpack(bnArgs("hidden",30),1,13)))
+assertReply(token,"BN_WHISPER")
+event("CHAT_MSG_WHISPER_INFORM","Outgoing to someone else","OtherCharacter")
+bnetReply("CHAT_MSG_BN_WHISPER_INFORM","Outgoing BNet elsewhere","OtherFriend",20)
+assertReply(token,"BN_WHISPER")
+event("CHAT_MSG_WHISPER","Latest character whisper","SecondCharacter")
+assertReply("SecondCharacter","WHISPER")
+-- Legacy API remains available on older clients; incoming unresolved BNet
+-- senders must still update native /r while their message stays in WoW chat.
+local modernSetter=ChatFrameUtil.SetLastTellTarget;ChatFrameUtil.SetLastTellTarget=nil
+bnetReply("CHAT_MSG_BN_WHISPER","Unresolved account","|Kq999|kUnknown|k",999)
+assertReply("|Kq999|kUnknown|k","BN_WHISPER")
+ChatFrameUtil.SetLastTellTarget=modernSetter
 -- No idle per-frame handlers; minimap drag adds one only during dragging.
 for _,o in ipairs(objects) do assert(not o.scripts.OnUpdate,"Unexpected idle polling") end
 ''')
@@ -1109,6 +1148,11 @@ for game_locale, choice, spanish in (
     vm.execute(r'''
         local locale, choice = ...
         function GetLocale() return locale end
+        coldLogin = locale == "esES" and choice == "auto"
+        function IsLoggedIn() return not coldLogin end
+        registerChatFilter = ChatFrame_AddMessageEventFilter
+        if coldLogin or locale == "deDE" then ChatFrame_AddMessageEventFilter=nil end
+        if coldLogin then loginMinimap=Minimap;Minimap=nil end
         function ReloadUI() requestedReload=true end
         ForeverWhisperDB.language = choice
         ForeverWhisperDB.soundChoice = 9
@@ -1121,6 +1165,23 @@ for game_locale, choice, spanish in (
     vm.execute(r'''
         local spanish = ...
         event("ADDON_LOADED","ForeverWhisper")
+        if coldLogin then
+            assert(not ForeverWhisperWindow,"UI started before login")
+            Minimap=loginMinimap
+            ChatFrameUtil.AddMessageEventFilter=registerChatFilter
+            coldLogin=false
+            event("PLAYER_LOGIN")
+            assert(filters.CHAT_MSG_WHISPER,"Modern chat filter was not installed at login")
+        end
+        local startedWindow=ForeverWhisperWindow
+        assert(startedWindow and ForeverWhisperMinimapButton,"Login did not finish addon startup")
+        local count=#objects
+        event("PLAYER_LOGIN")
+        event("PLAYER_ENTERING_WORLD",true,false)
+        assert(startedWindow==ForeverWhisperWindow and #objects==count,"Startup ran more than once")
+        event("CHAT_MSG_WHISPER","First whisper after login","LoginSender")
+        assert(ForeverWhisperDB.conversations.loginsender.messages[1].text=="First whisper after login",
+            "Whisper handler was not registered after startup")
         assert(ForeverWhisperDB.soundChoice==8,"Retired sound selection did not migrate")
         SlashCmdList.FOREVERWHISPER("EnglishName")
         local win=ForeverWhisperWindow
