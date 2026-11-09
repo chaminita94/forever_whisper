@@ -158,7 +158,32 @@ local function urlSegments(text, plain, link)
     return table.concat(output)
 end
 
-function NS.URLs(text, renderPlain)
+local whisperDetailTypes = {
+    item = true, quest = true, spell = true, enchant = true, talent = true,
+    achievement = true, currency = true, battlepet = true,
+}
+
+function NS.IsWhisperDetailLink(link)
+    local kind, suffix = link:match("^(%a+):%d+(.*)$")
+    return whisperDetailTypes[kind] and (suffix == "" or suffix:match("^:[%w:%-]*$") ~= nil)
+end
+
+local function communityLinkNotice(payload, display, showLabel)
+    local kind = payload:match("^(%a+):")
+    if kind ~= "clubTicket" and kind ~= "clubFinder" and kind ~= "community" then return end
+    local warning = "|cffffc66d" .. NS.L["[Community link]"] .. "|r"
+    if showLabel then return display:gsub("|", "||") .. " " .. warning end
+    return warning
+end
+
+function NS.PreviewCommunityLinks(text, showLabel)
+    if not text:find("|H", 1, true) then return text end
+    return (text:gsub("(|H([^|]+)|h(.-)|h)", function(token, payload, display)
+        return communityLinkNotice(payload, display, showLabel) or token
+    end))
+end
+
+function NS.URLs(text, renderPlain, showCommunityLabel)
     local found, output, position = {}, {}, 1
     local function plain(value) return renderPlain and renderPlain(value) or value end
     local function link(url)
@@ -167,14 +192,20 @@ function NS.URLs(text, renderPlain)
         local encoded = url:gsub(".", function(c) return string.format("%02x", c:byte()) end)
         return "|cff72cfff|Hfwurl:" .. encoded .. "|h" .. url .. "|h|r"
     end
-    -- Do not rewrite Blizzard item/player links, texture escapes, or atlas escapes.
     while position <= #text do
         local pipe = text:find("|", position, true)
         if not pipe then output[#output + 1] = urlSegments(text:sub(position), plain, link); break end
         output[#output + 1] = urlSegments(text:sub(position, pipe-1), plain, link)
         local tail = text:sub(pipe)
-        local token = tail:match("^|H.-|h.-|h") or tail:match("^|T.-|t") or tail:match("^|A.-|a")
-        output[#output + 1] = token or "|"
+        local token, payload, display = tail:match("^(|H([^|]+)|h(.-)|h)")
+        token = token or tail:match("^||") or tail:match("^|T.-|t") or tail:match("^|A.-|a")
+        if renderPlain and payload and not NS.IsWhisperDetailLink(payload) then
+            -- A label can look like an item while its payload opens a UI action.
+            output[#output + 1] = communityLinkNotice(payload, display, showCommunityLabel)
+                or display:gsub("|", "||")
+        else
+            output[#output + 1] = token or "|"
+        end
         position = pipe + (token and #token or 1)
     end
     return table.concat(output), found

@@ -37,6 +37,7 @@ local defaults = {
     opacity = 0.94, historyLimit = 80, x = 0, y = 0,
     font = 5, theme = 9, timestamps = true, sound = false,
     keepChat = false, showMinimap = true, minimapAngle = 225,
+    showCommunityLinkLabels = false,
     conversations = {}, artwork = true, artBrightness = 0.95, combatPreview = true, typing = true,
     contactSort = "recent", popupDuration = 7, popupFontSize = 13, popupNameOnly = false, popupLocked = false,
     onlineNotifyMode = "popup",
@@ -316,6 +317,47 @@ local function label(parent, text, size, anchor, x, y)
     f:SetJustifyH("LEFT")
     styledLabels[#styledLabels + 1] = { frame = f, size = size }
     return f
+end
+
+function NS.ShowLinkDetails(owner, link, linkText)
+    local lines = {}
+    local ok, data = pcall(C_TooltipInfo.GetHyperlink, link)
+    if ok and not (issecretvalue and issecretvalue(data)) and data and data.lines then
+        for _, line in ipairs(data.lines) do
+            local left, right = line.leftText, line.rightText
+            if left then
+                if line.leftColor and line.leftColor.WrapTextInColorCode then left = line.leftColor:WrapTextInColorCode(left) end
+                if right then
+                    if line.rightColor and line.rightColor.WrapTextInColorCode then right = line.rightColor:WrapTextInColorCode(right) end
+                    left = left .. "    " .. right
+                end
+                lines[#lines + 1] = left
+            end
+        end
+    end
+    if #lines == 0 then
+        lines[1] = linkText:match("|h(.-)|h") or linkText
+        lines[2] = NS.L["Link details are unavailable."]
+    end
+
+    -- Draw public tooltip data in a plain frame, outside the native action handlers.
+    if not owner.itemTooltip then
+        local panel = CreateFrame("Frame", "ForeverWhisperItemTooltip", owner)
+        panel:SetFrameStrata("TOOLTIP")
+        panel:SetClampedToScreen(true)
+        panel:SetWidth(290)
+        panel:SetPoint("TOPLEFT", owner, "TOPRIGHT", 8, 0)
+        fill(panel, 0.06, 0.07, 0.10, 0.98)
+        panel.body = label(panel, "", 13, "TOPLEFT", 12, -10)
+        panel.body:SetWidth(266)
+        panel.body:SetJustifyV("TOP")
+        panel.body:SetWordWrap(true)
+        owner.itemTooltip = panel
+    end
+    local panel = owner.itemTooltip
+    panel.body:SetText(table.concat(lines, "\n"))
+    panel:SetHeight(panel.body:GetStringHeight() + 20)
+    panel:Show()
 end
 
 local function button(parent, text, width, height, click)
@@ -892,7 +934,7 @@ local function refreshTranscript(preserveScroll, newMessage)
         local body, who, quote = NS.DecodeReply(item.text)
         if who and c.kind == "bnet" then who = NS.BNetDisplayName(who) end
         local quoted = who and (NS.L["|cff7fcbbbReply to:|r\n|cff98aaa9"] .. NS.Excerpt(quote) .. "|r\n") or ""
-        local rendered = NS.URLs(body, function(text) return renderEmoji(renderMapPins(text)) end)
+        local rendered = NS.URLs(body, function(text) return renderEmoji(renderMapPins(text)) end, db.showCommunityLinkLabels)
         transcript:AddMessage(dateLine .. heading .. quoted .. prefix .. "|cffd6e1eb  " .. rendered .. "|r", item.outgoing, isNew)
         previous = item
     end
@@ -943,6 +985,7 @@ local function refreshContacts()
             if item.data.kind == "bnet" and last then
                 preview = (last.outgoing and NS.L["You: "] or "") .. NS.BNetDisplayMessage(last.text)
             end
+            preview = NS.PreviewCommunityLinks(preview, db.showCommunityLinkLabels)
             preview = preview:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
                 :gsub("|H.-|h(.-)|h", "%1"):gsub("|T.-|t", "[image]"):gsub("[\r\n]", " ")
             b.preview:SetText((item.data.pinned and NS.L["|cff9ab5cbPIN  |r"] or "") .. preview)
@@ -1122,7 +1165,8 @@ local function refreshSearchResults()
                 b.preview:SetText(NS.L["Open conversation  |cff8198a8"] .. result.saved .. NS.L[" saved messages|r"])
             else
                 b.title:SetText(result.name .. "  |cff8198a8" .. date("%d %b %H:%M", result.at) .. "|r")
-                b.preview:SetText(result.text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))
+                local preview = NS.PreviewCommunityLinks(result.text, db.showCommunityLinkLabels)
+                b.preview:SetText(preview:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))
             end
             b:Show()
         else
@@ -1991,8 +2035,21 @@ local function makeWindow()
             if mouseButton == "RightButton" then openContactMenu(key, self) end
         else
             local map, px, py = link:match("^fwmap:(%d+):(%d+):(%d+)$")
-            if map then openMapPin(tonumber(map), tonumber(px) / 10000, tonumber(py) / 10000)
-            elseif SetItemRef then SetItemRef(link, text, mouseButton) end
+            if map then
+                openMapPin(tonumber(map), tonumber(px) / 10000, tonumber(py) / 10000)
+            elseif NS.IsWhisperDetailLink(link) then
+                if IsModifiedClick and IsModifiedClick("CHATLINK") then
+                    local insert = ChatFrameUtil and ChatFrameUtil.InsertLink or ChatEdit_InsertLink
+                    if insert then
+                        local hyperlink = text:find("|H", 1, true) and text or ("|H" .. link .. "|h" .. text .. "|h")
+                        insert(hyperlink)
+                    end
+                elseif C_TooltipInfo and C_TooltipInfo.GetHyperlink then
+                    NS.ShowLinkDetails(self, link, text)
+                elseif SetItemRef then
+                    SetItemRef(link, text, mouseButton)
+                end
+            end
         end
     end
     transcript:SetScript("OnMouseDown", function()
@@ -2635,17 +2692,19 @@ local function makeSettings()
     arrangePopup:SetPoint("TOPRIGHT", -154, -278)
     local function check(parent, rowIndex, text, field, apply)
         local row = CreateFrame("Frame", nil, parent)
-        row:SetPoint("TOPLEFT", 0, -(rowIndex - 1) * 25)
-        row:SetPoint("TOPRIGHT", 0, -(rowIndex - 1) * 25)
-        row:SetHeight(24)
+        local spacing = parent.checkSpacing or 25
+        row:SetPoint("TOPLEFT", 0, -(rowIndex - 1) * spacing)
+        row:SetPoint("TOPRIGHT", 0, -(rowIndex - 1) * spacing)
+        row:SetHeight(spacing - 1)
         local b = CreateFrame("CheckButton", nil, row)
         b:SetAllPoints()
         local box = b:CreateTexture(nil, "BACKGROUND")
         box:SetPoint("LEFT", 2, 0)
-        box:SetSize(20, 20)
+        local boxSize = math.min(20, spacing - 2)
+        box:SetSize(boxSize, boxSize)
         box:SetColorTexture(0.18, 0.23, 0.29, 1)
         local marker = b:CreateTexture(nil, "ARTWORK")
-        marker:SetPoint("LEFT", 7, 0)
+        marker:SetPoint("CENTER", box, "CENTER")
         marker:SetSize(10, 10)
         marker:SetColorTexture(0.6, 0.8, 1, 1)
         settings.checkMarkers[#settings.checkMarkers + 1] = marker
@@ -2662,11 +2721,13 @@ local function makeSettings()
     local leftChecks = CreateFrame("Frame", nil, settings)
     leftChecks:SetPoint("TOPLEFT", 26, -308)
     leftChecks:SetPoint("TOPRIGHT", settings, "TOP", -9, -308)
-    leftChecks:SetHeight(75)
+    leftChecks:SetHeight(80)
+    leftChecks.checkSpacing = 20
     local rightChecks = CreateFrame("Frame", nil, settings)
     rightChecks:SetPoint("TOPLEFT", settings, "TOP", 9, -308)
     rightChecks:SetPoint("TOPRIGHT", -26, -308)
-    rightChecks:SetHeight(61)
+    rightChecks:SetHeight(80)
+    rightChecks.checkSpacing = 20
     check(leftChecks, 1, NS.L["Show timestamps"], "timestamps", refreshTranscript)
     check(leftChecks, 2, NS.L["Play sound for whispers"], "sound")
     check(leftChecks, 3, NS.L["Combat message previews"], "combatPreview", function()
@@ -2678,6 +2739,10 @@ local function makeSettings()
         if social and not db.typing then social:Disable() end
         refreshContacts()
         refreshPresence()
+    end)
+    check(rightChecks, 4, NS.L["Show community link labels"], "showCommunityLinkLabels", function()
+        refreshTranscript(true)
+        refreshContacts()
     end)
     local popupOptions = button(settings, NS.L["Popup options"], 120, 23, function()
         if settings.generalOptions then settings.generalOptions:Hide() end
@@ -3037,6 +3102,7 @@ StaticPopupDialogs["FOREVERWHISPER_DELETE"] = {
 }
 FW:SetScript("OnEvent", function(_, event, ...)
     if event == "GLOBAL_MOUSE_DOWN" then
+        if transcript and transcript.itemTooltip then transcript.itemTooltip:Hide() end
         local menu=NS.dropdownMenu
         if menu and menu:IsShown() and not NS.MouseInsideRoots({menu,menu.owner}) then menu:Hide() end
         -- Outside clicks still release movement keys immediately. Remember only this
@@ -3235,8 +3301,9 @@ FW:SetScript("OnEvent", function(_, event, ...)
             if not outgoing then
                 if not db.conversations[key].muted then queuedInCombat = true end
                 if db.combatPreview and combatPreview and not db.conversations[key].muted then
-                    combatPreview:ShowWhisper(db.conversations[key].name,
-                        renderEmoji(renderMapPins(bnet and NS.BNetDisplayMessage(message) or message)))
+                    local preview = bnet and NS.BNetDisplayMessage(message) or message
+                    preview = NS.PreviewCommunityLinks(preview, db.showCommunityLinkLabels)
+                    combatPreview:ShowWhisper(db.conversations[key].name, renderEmoji(renderMapPins(preview)))
                 end
             end
         else

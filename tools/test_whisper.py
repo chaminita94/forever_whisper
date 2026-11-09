@@ -193,7 +193,7 @@ ChatFrameUtil={InsertLink=function(text) return ChatEdit_InsertLink(text) end,
 function GetCurrentKeyBoardFocus()
     for _,o in ipairs(objects) do if o.focus then return o end end
 end
-function IsModifiedClick(action) return action=="CHATLINK" and chatLinkModifier or false end
+function IsModifiedClick(action) return (not action or action=="CHATLINK") and chatLinkModifier or false end
 C_PartyInfo={InviteUnit=function(name) invited=name end}
 C_FriendList={AddFriend=function(name) addedFriend=name end}
 function ChatFrame_AddMessageEventFilter(e,f) filters[e]=f end
@@ -965,6 +965,70 @@ assert(foreign.focus,"Outside click changed another addon's keyboard field")
 foreign:ClearFocus();GetMouseFoci=nil
 -- Both modern and legacy Shift-click APIs insert exactly once into the active
 -- composer, including the outside mouse-down / item mouse-up event sequence.
+local itemRef="item:2236::::::::60:::::::::"
+local receivedItem="|cff0070dd|H"..itemRef.."|h[Blackfang]|h|r"
+event("CHAT_MSG_WHISPER",receivedItem,"LinkTester")
+local itemBody=log.rows[#log.lines].body
+local previousNativeLink=nativeLink
+C_TooltipInfo={GetHyperlink=function(link)
+    assert(link==itemRef,"Lost item hyperlink data")
+    return {lines={{leftText="Blackfang"},{leftText="17–32 Damage",rightText="Speed 1.50"}}}
+end}
+itemBody.scripts.OnHyperlinkClick(itemBody,itemRef,receivedItem,"LeftButton")
+local itemTooltip=ForeverWhisperItemTooltip
+assert(itemTooltip and itemTooltip:IsShown() and itemTooltip.kind=="Frame"
+    and itemTooltip.body:GetText()=="Blackfang\n17–32 Damage    Speed 1.50",
+    "Clicking an item did not display its public data in the addon frame")
+assert(nativeLink==previousNativeLink,"Item preview called the protected native panel path")
+GetMouseFoci=function() return {UIParent} end
+event("GLOBAL_MOUSE_DOWN","LeftButton")
+GetMouseFoci=nil
+assert(not itemTooltip:IsShown(),"Item tooltip stayed open after another click")
+chatLinkModifier=true
+composer:SetText("");composer:SetFocus()
+itemBody.scripts.OnHyperlinkClick(itemBody,itemRef,receivedItem,"LeftButton")
+assert(composer:GetText()==receivedItem and nativeLink==previousNativeLink and not itemTooltip:IsShown(),
+    "Shift-click did not insert the original link directly")
+chatLinkModifier=false
+C_TooltipInfo.GetHyperlink=function() return nil end
+itemBody.scripts.OnHyperlinkClick(itemBody,itemRef,receivedItem,"LeftButton")
+assert(itemTooltip.body:GetText()=="[Blackfang]\nLink details are unavailable." and nativeLink==previousNativeLink,
+    "Missing item data fell back to a native link panel")
+itemTooltip:Hide()
+C_TooltipInfo=nil
+-- A community invite can have the exact same displayed label as an item.
+local disguisedInvite="|cff0070dd|HclubTicket:synthetic|h[Blackfang]|h|r"
+event("CHAT_MSG_WHISPER",disguisedInvite,"LinkTester")
+assert(log.lines[#log.lines]:find("[Community link]",1,true)
+    and not log.lines[#log.lines]:find("Blackfang",1,true)
+    and not log.lines[#log.lines]:find("clubTicket",1,true),"Invite label or payload escaped the default warning")
+click("Settings")
+local linkSettingLabel=find("FontString","Show community link labels")
+for _, control in ipairs(objects) do
+    if control.kind=="CheckButton" and control.parent==linkSettingLabel.parent then
+        control:SetChecked(true)
+        control.scripts.OnClick(control)
+        break
+    end
+end
+click("Back")
+assert(ForeverWhisperDB.showCommunityLinkLabels
+    and log.lines[#log.lines]:find("[Blackfang]",1,true)
+    and log.lines[#log.lines]:find("[Community link]",1,true)
+    and not log.lines[#log.lines]:find("clubTicket",1,true),"Showing the original label removed the warning or restored the link")
+local savedLinks=ForeverWhisperDB.conversations.linktester.messages
+assert(savedLinks[#savedLinks].text==disguisedInvite,"Display filtering rewrote saved history")
+local before=#nativeInsertions
+for _, link in ipairs({"clubTicket:synthetic","addon:someAction","item:2236x","censoredmessage:123"}) do
+    chatLinkModifier=true
+    log.onHyperlinkClick(log,link,"[Item]", "LeftButton")
+    chatLinkModifier=false
+    log.onHyperlinkClick(log,link,"[Item]", "LeftButton")
+end
+assert(nativeLink==previousNativeLink and #nativeInsertions==before and not itemTooltip:IsShown(),
+    "An action link escaped the transcript allowlist")
+log.onHyperlinkClick(log,"quest:42:20","[Quest]","LeftButton")
+assert(nativeLink.link=="quest:42:20","Legacy quest link lost its preview")
 local itemLink="|cff1eff00|Hitem:6948::::::::60:::::::::|h[Hearthstone]|h|r"
 local originalCount=#nativeInsertions
 composer:SetText("Look at ");composer:SetFocus()
