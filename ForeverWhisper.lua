@@ -1744,15 +1744,23 @@ local function makeWindow()
     nameTarget:SetPoint("TOPLEFT", CONTENT_LEFT, -5)
     nameTarget:SetPoint("TOPRIGHT", -230, -5)
     nameTarget:SetHeight(44)
-    nameTarget:RegisterForClicks("RightButtonUp")
+    nameTarget:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     nameTarget:RegisterForDrag("LeftButton")
-    nameTarget:SetScript("OnClick", function(self) if activeView == "chat" and current then openContactMenu(current, self) end end)
+    nameTarget:SetScript("OnClick", function(self, mouseButton)
+        if activeView ~= "chat" or not current then return end
+        if mouseButton == "LeftButton" and IsModifiedClick and IsModifiedClick("CHATLINK") then
+            NS.LookupPlayer(db.conversations[current])
+        elseif mouseButton == "RightButton" then
+            openContactMenu(current, self)
+        end
+    end)
     nameTarget:SetScript("OnDragStart", function() window:BeginCursorDrag() end)
     nameTarget:SetScript("OnDragStop", function() window:EndCursorDrag() end)
     nameTarget:SetScript("OnEnter", function(self)
         if activeView ~= "chat" or not current then return end
         GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
         GameTooltip:SetText(NS.L["Right-click for player actions"])
+        GameTooltip:AddLine(NS.L["Shift-click: look up character"], 0.7, 0.8, 0.9)
         GameTooltip:Show()
     end)
     nameTarget:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -1987,8 +1995,14 @@ local function makeWindow()
         b.unread = label(b.unreadBadge, "", 10, "CENTER", 0, 0)
         b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         b:SetScript("OnClick", function(self, mouseButton)
-            if mouseButton == "RightButton" then openContactMenu(self.key, self)
-            else selectConversation(self.key); newChat:Hide() end
+            if mouseButton == "RightButton" then
+                openContactMenu(self.key, self)
+            elseif IsModifiedClick and IsModifiedClick("CHATLINK") then
+                NS.LookupPlayer(db.conversations[self.key])
+            else
+                selectConversation(self.key)
+                newChat:Hide()
+            end
         end)
         contactButtons[i] = b
     end
@@ -2032,7 +2046,11 @@ local function makeWindow()
         end
         local key = link:match("^fwplayer:(.+)$")
         if key then
-            if mouseButton == "RightButton" then openContactMenu(key, self) end
+            if mouseButton == "RightButton" then
+                openContactMenu(key, self)
+            elseif mouseButton == "LeftButton" and IsModifiedClick and IsModifiedClick("CHATLINK") then
+                NS.LookupPlayer(db.conversations[key])
+            end
         else
             local map, px, py = link:match("^fwmap:(%d+):(%d+):(%d+)$")
             if map then

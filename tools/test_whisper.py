@@ -409,8 +409,29 @@ assert(composer:GetText()=="Meet me in Stormwind, Bob.")
 log.onHyperlinkClick(log,"fwplayer:alice","Alice","RightButton")
 assert(log.hyperlinks,"Transcript links were not enabled")
 click("Copy character name");find("EditBox","Alice");click("Close")
-ForeverWhisperWindow.nameTarget.scripts.OnClick(ForeverWhisperWindow.nameTarget)
+ForeverWhisperWindow.nameTarget.scripts.OnClick(ForeverWhisperWindow.nameTarget,"RightButton")
 click("Copy character name");find("EditBox","Bob");click("Close")
+local lookupCalls={}
+C_FriendList.SendWho=function(query,origin) lookupCalls[#lookupCalls+1]={query=query,origin=origin} end
+WHO_TAG_EXACT="exact-";Enum={SocialWhoOrigin={Item=3}}
+chatLinkModifier=true
+log.onHyperlinkClick(log,"fwplayer:alice","Private nickname","LeftButton")
+assert(lookupCalls[#lookupCalls].query=="exact-Alice" and lookupCalls[#lookupCalls].origin==3,
+    "Shift-click sender used its visible label instead of the character identity")
+ForeverWhisperWindow.nameTarget.scripts.OnClick(ForeverWhisperWindow.nameTarget,"LeftButton")
+assert(lookupCalls[#lookupCalls].query=="exact-Bob","Header Shift-click did not look up the active character")
+for _,row in ipairs(objects) do
+    if row.key=="alice" and row.statusDot and row:IsShown() then
+        row.scripts.OnClick(row,"LeftButton")
+        break
+    end
+end
+assert(lookupCalls[#lookupCalls].query=="exact-Alice" and ForeverWhisperWindow.heading.text=="Bob",
+    "Shift-click contact switched conversations instead of looking up the character")
+local count=#lookupCalls
+chatLinkModifier=false
+ForeverWhisperWindow.nameTarget.scripts.OnClick(ForeverWhisperWindow.nameTarget,"LeftButton")
+assert(#lookupCalls==count,"Ordinary left-click ran a lookup")
 local native=UnitPopup_OpenMenu;UnitPopup_OpenMenu=nil
 rightClick("Bob");click("Report / WoW player menu...")
 assert(nativeLink.link:find("player:Bob:",1,true) and nativeLink.button=="RightButton")

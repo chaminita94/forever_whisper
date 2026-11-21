@@ -49,6 +49,32 @@ function NS.RememberWhisperSender(author, bnet)
     if setter then pcall(setter, author, bnet and "BN_WHISPER" or "WHISPER") end
 end
 
+function NS.LookupPlayer(contact)
+    if not contact then return end
+    local name = contact.name
+    if contact.kind == "bnet" then
+        local record = NS.FindBNet(contact.battleTag)
+        local game = record and record.info.gameAccountInfo
+        name = game and game.isOnline and game.clientProgram == "WoW" and game.characterName
+        if name and game.realmName and game.realmName ~= "" then
+            name = name .. "-" .. game.realmName:gsub("%s", "")
+        end
+    end
+    local sendWho = C_FriendList and C_FriendList.SendWho or SendWho
+    if type(name) ~= "string" or name == "" or not sendWho then
+        DEFAULT_CHAT_FRAME:AddMessage(NS.L["Forever Whisper: character lookup is unavailable for this contact."])
+        return
+    end
+    if C_NameUtil and C_NameUtil.ReplaceSurnameSeparatorWithLinkSeparator then
+        name = C_NameUtil.ReplaceSurnameSeparatorWithLinkSeparator(name)
+    end
+    local origin = Enum and Enum.SocialWhoOrigin and Enum.SocialWhoOrigin.Item
+    local ok = pcall(sendWho, (WHO_TAG_EXACT or "n-") .. name, origin)
+    if not ok then
+        DEFAULT_CHAT_FRAME:AddMessage(NS.L["Forever Whisper: character lookup is unavailable for this contact."])
+    end
+end
+
 function NS.PeerKey(name)
     if type(name) ~= "string" then return nil end
     name = name:match("^%s*(.-)%s*$"):lower()

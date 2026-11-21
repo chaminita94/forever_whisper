@@ -32,6 +32,8 @@ local es = {
     ["|cff7fcbbbReply to:|r\n|cff98aaa9"] = "|cff7fcbbbRespuesta a:|r\n|cff98aaa9",
     ["ENTER  Send    /    ESC  Release keyboard"] = "INTRO  Enviar    /    ESC  Liberar teclado",
     ["A little closer to your people.\n\nChoose a chat on the left, or click + New."] = "Un poco más cerca de los tuyos.\n\nElige un chat a la izquierda o pulsa + Nuevo.",
+    ["Shift-click: look up character"] = "Mayús-clic: buscar personaje",
+    ["Forever Whisper: character lookup is unavailable for this contact."] = "Forever Whisper: no se puede buscar el personaje de este contacto.",
     ["Right-click for player actions"] = "Clic derecho para ver las acciones",
     ["Copy text"] = "Copiar texto", ["Copy link"] = "Copiar enlace", ["Copy links"] = "Copiar enlaces",
     ["Select text, then press Ctrl+C"] = "Selecciona el texto y pulsa Ctrl+C",
